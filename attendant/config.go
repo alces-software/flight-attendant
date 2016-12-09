@@ -28,8 +28,63 @@
 
 package attendant
 
+import (
+  "fmt"
+  "strings"
+  "gopkg.in/yaml.v2"
+)
+
 var TemplateSets = map[string]string {
   "default": "https://s3-eu-west-1.amazonaws.com/alces-flight/Templates/%s",
+}
+
+var ConfigDefaults = map[string]string {
+  "region": "us-east-1",
+  "access-key": "",
+  "secret-key": "",
+  "template-set": "default",
+  
+  "admin-user-name": "alces",
+  "access-network": "0.0.0.0/0",
+  "scheduler-type": "gridscheduler",
+  "profile-bucket": "",
+
+  "appliance-instance-type": "",
+
+  "directory-profiles": "",
+  "directory-features": "",
+  "directory-instance-type": "",
+
+  "access-manager-profiles": "",
+  "access-manager-features": "",
+  "access-manager-instance-type": "",
+
+  "storage-manager-profiles": "",
+  "storage-manager-features": "",
+  "storage-manager-instance-type": "",
+
+  "master-profiles": "",
+  "master-features": "",
+  "master-instance-type": MasterInstanceTypes[0],
+  "master-instance-override": "",
+  "preload-software": "-none-",
+  "master-volume-layout": "standard",
+  "master-volume-encryption-policy": "unencrypted",
+  "master-system-volume-size": "500",
+  "master-system-volume-type": "magnetic.standard",
+  "master-home-volume-size": "400",
+  "master-home-volume-type": "magnetic.standard",
+  "master-apps-volume-size": "100",
+  "master-apps-volume-type": "magnetic.standard",
+
+  "compute-profiles": "",
+  "compute-features": "",
+  "compute-instance-type": ComputeInstanceTypes[0],
+  "compute-instance-override": "",
+  "compute-spot-price": "0.5",
+  "compute-autoscaling-policy": "enabled",
+  "compute-initial-nodes": "1",
+  "compute-system-volume-type": "magnetic.standard",
 }
 
 type Configuration struct {
@@ -37,11 +92,7 @@ type Configuration struct {
   AwsAccessKey string
   AwsSecretKey string
   TemplateSet string
-
   AccessKeyName string
-  ApplianceInstanceType string
-  MasterInstanceType string
-  ComputeInstanceType string
 }
 
 var config *Configuration
@@ -53,11 +104,32 @@ func Config() *Configuration {
   config = &Configuration{
     AwsRegion: "us-east-1",
     AccessKeyName: "flight-admin",
-    ApplianceInstanceType: ApplianceInstanceTypes[0],
   }
   return config
 }
 
 func (c *Configuration) IsValidKeyPair() bool {
   return IsValidKeyPairName(c.AccessKeyName)
+}
+
+func RenderConfig() ([]byte, error) {
+  return yaml.Marshal(&ConfigDefaults)
+}
+
+func RenderConfigValues() (string, error) {
+  s := ""
+  var templateSets []string
+  for v, _ := range TemplateSets {
+    templateSets = append(templateSets, v)
+  }
+  s += fmt.Sprintf(" == template set ==\n\n     %s\n\n", strings.Join(templateSets, "\n     "))
+  s += fmt.Sprintf(" == compute instance type ==\n\n     %s\n\n", strings.Join(ComputeInstanceTypes, "\n     "))
+  s += fmt.Sprintf(" == master instance type ==\n\n     %s\n\n", strings.Join(MasterInstanceTypes, "\n     "))
+  s += fmt.Sprintf(" == appliance instance type ==\n\n     %s\n\n", strings.Join(ApplianceInstanceTypes, "\n     "))
+  s += fmt.Sprintf(" == instance type override ==\n\n     %s\n\n", strings.Join(InstanceTypes, "\n     "))
+  s += fmt.Sprintf(" == system volume type ==\n\n     %s\n\n", strings.Join(SystemVolumeTypes, "\n     "))
+  s += fmt.Sprintf(" == other volume type ==\n\n     %s\n\n", strings.Join(OtherVolumeTypes, "\n     "))
+  s += fmt.Sprintf(" == preload software ==\n\n     %s\n\n", strings.Join(SoftwareTypes, "\n     "))
+  s += fmt.Sprintf(" == scheduler type ==\n\n     %s\n\n", strings.Join(SchedulerTypes, "\n     "))
+  return s, nil
 }

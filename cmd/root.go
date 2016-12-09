@@ -51,7 +51,26 @@ appliances, launch and manage clusters and get status information
 on your Alces Flight Compute architecture.`,
 // Uncomment the following line if your bare application
 // has an action associated with it:
-//	Run: func(cmd *cobra.Command, args []string) { },
+	Run: func(cmd *cobra.Command, args []string) {
+    if v, _ := cmd.Flags().GetBool("show-config-example"); v {
+      cfg, err := attendant.RenderConfig()
+      if err != nil {
+        fmt.Println(err.Error())
+        return
+      }
+      fmt.Println(string(cfg))
+    } else if v, _ := cmd.Flags().GetBool("show-config-values"); v {
+      cfg, err := attendant.RenderConfigValues()
+      if err != nil {
+        fmt.Println(err.Error())
+        return
+      }
+      fmt.Println(cfg)
+    } else {
+			cmd.Help()
+			return
+    }
+  },
 }
 
 // Execute adds all child commands to the root command sets flags appropriately.
@@ -73,48 +92,17 @@ func init() {
   RootCmd.PersistentFlags().String("access-key", "", "AWS access key ID")
   RootCmd.PersistentFlags().String("secret-key", "", "AWS secret access key")
   RootCmd.PersistentFlags().String("template-set", "default", "Template set")
+  RootCmd.Flags().Bool("show-config-example", false, "Display an example configuration file")
+  RootCmd.Flags().Bool("show-config-values", false, "Display valid configuration values")
+
   viper.BindPFlag("region", RootCmd.PersistentFlags().Lookup("region"))
   viper.BindPFlag("access-key", RootCmd.PersistentFlags().Lookup("access-key"))
   viper.BindPFlag("secret-key", RootCmd.PersistentFlags().Lookup("secret-key"))
   viper.BindPFlag("template-set", RootCmd.PersistentFlags().Lookup("template-set"))
 
-  viper.SetDefault("admin-user-name", "alces")
-  viper.SetDefault("access-network", "0.0.0.0/0")
-  viper.SetDefault("scheduler-type", "gridscheduler")
-  viper.SetDefault("profile-bucket", "")
-
-  viper.SetDefault("directory-profiles", "")
-  viper.SetDefault("directory-features", "")
-  viper.SetDefault("directory-instance-type", "small-t2.large")
-
-  viper.SetDefault("access-manager-profiles", "")
-  viper.SetDefault("access-manager-features", "")
-  viper.SetDefault("access-manager-instance-type", "small-t2.large")
-
-  viper.SetDefault("storage-manager-profiles", "")
-  viper.SetDefault("storage-manager-features", "")
-  viper.SetDefault("storage-manager-instance-type", "small-t2.large")
-
-  viper.SetDefault("master-profiles", "")
-  viper.SetDefault("master-features", "")
-  viper.SetDefault("master-instance-override", "")
-  viper.SetDefault("preload-software", "")
-  viper.SetDefault("master-volume-layout", "")
-  viper.SetDefault("master-volume-encryption-policy", "unencrypted")
-  viper.SetDefault("master-system-volume-size", "500")
-  viper.SetDefault("master-system-volume-type", "")
-  viper.SetDefault("master-home-volume-size", "")
-  viper.SetDefault("master-home-volume-type", "")
-  viper.SetDefault("master-apps-volume-size", "")
-  viper.SetDefault("master-apps-volume-type", "")
-
-  viper.SetDefault("compute-profiles", "")
-  viper.SetDefault("compute-features", "")
-  viper.SetDefault("compute-instance-override", "")
-  viper.SetDefault("compute-spot-price", "")
-  viper.SetDefault("compute-autoscaling-policy", "enabled")
-  viper.SetDefault("compute-initial-nodes", "1")
-  viper.SetDefault("compute-system-volume-type", "")
+  for key, val := range attendant.ConfigDefaults {
+    viper.SetDefault(key, val)
+  }
 }
 
 // initConfig reads in config file and ENV variables if set.

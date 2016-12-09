@@ -50,9 +50,7 @@ var clusterLaunchCmd = &cobra.Command{
 
     masterInstanceType := viper.GetString("master-instance-type")
     if masterInstanceType != "" {
-      if attendant.IsValidMasterInstanceType(masterInstanceType) == true {
-        attendant.Config().MasterInstanceType = masterInstanceType
-      } else {
+      if ! attendant.IsValidMasterInstanceType(masterInstanceType) {
         fmt.Printf("Invalid master instance type '%s'. Try one of: %s\n", masterInstanceType, attendant.MasterInstanceTypes)
         return
       }
@@ -60,9 +58,7 @@ var clusterLaunchCmd = &cobra.Command{
 
     computeInstanceType := viper.GetString("compute-instance-type")
     if computeInstanceType != "" {
-      if attendant.IsValidComputeInstanceType(computeInstanceType) == true {
-        attendant.Config().ComputeInstanceType = computeInstanceType
-      } else {
+      if ! attendant.IsValidComputeInstanceType(computeInstanceType) {
         fmt.Printf("Invalid compute instance type '%s'. Try one of: %s\n", computeInstanceType, attendant.ComputeInstanceTypes)
         return
       }
@@ -90,7 +86,10 @@ var clusterLaunchCmd = &cobra.Command{
 			fmt.Println(err.Error())
 			return
 		}
-    fmt.Println("\nCluster launched.\n\nAccess via:\n\n\tssh " + cluster.Master.Username() + "@" + cluster.Master.AccessIP())
+    fmt.Println("\nCluster launched.\n")
+    fmt.Println("== Access details ==")
+    fmt.Println(cluster.GetAccessDetails() + "\n")
+    fmt.Println("\nAccess via:\n\n\tssh " + cluster.Master.Username() + "@" + cluster.Master.AccessIP())
 	},
 }
 

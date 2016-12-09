@@ -228,6 +228,14 @@ func (c *Cluster) Destroy() error {
   return nil
 }
 
+func (c Cluster) GetAccessDetails() string {
+  ip := getStackOutput(c.Master.Stack, "AccessIP")
+  keypair := getStackParameter(c.Master.Stack, "AccessKeyName")
+  username := getStackOutput(c.Master.Stack, "Username")
+  url := getStackOutput(c.Master.Stack, "WebAccess")
+  return fmt.Sprintf("IP address: %s\nKey pair: %s\nAdministrator username: %s\nAccess URL: %s\n", ip, keypair, username, url)
+}
+
 func ClusterNames() ([]string, error) {
   var clusters []string
 
@@ -338,6 +346,12 @@ func createNetworkLaunchParameters(cluster *Cluster, network int) ([]*cloudforma
 }
 
 func createMasterLaunchParameters(cluster *Cluster) ([]*cloudformation.Parameter, error) {
+  masterFeatures := viper.GetString("master-features")
+  if masterFeatures != "" {
+    masterFeatures = masterFeatures + " password-auth"
+  } else {
+    masterFeatures = "password-auth"
+  }
   params := []*cloudformation.Parameter{
     {
       ParameterKey: aws.String("AccessKeyName"),
@@ -345,7 +359,7 @@ func createMasterLaunchParameters(cluster *Cluster) ([]*cloudformation.Parameter
     },
     {
       ParameterKey: aws.String("AccessNetwork"),
-      ParameterValue: aws.String("0.0.0.0/0"),
+      ParameterValue: aws.String(viper.GetString("access-network")),
     },
     {
       ParameterKey: aws.String("AccessUsername"),
@@ -385,19 +399,78 @@ func createMasterLaunchParameters(cluster *Cluster) ([]*cloudformation.Parameter
     },
     {
       ParameterKey: aws.String("FlightFeatures"),
-      ParameterValue: aws.String("password-auth"),
+      ParameterValue: aws.String(masterFeatures),
     },
     {
       ParameterKey: aws.String("FlightProfileBucket"),
-      ParameterValue: aws.String(""),
+      ParameterValue: aws.String(viper.GetString("profile-bucket")),
     },
     {
       ParameterKey: aws.String("FlightProfiles"),
-      ParameterValue: aws.String(""),
+      ParameterValue: aws.String(viper.GetString("master-profiles")),
     },
+    {
+      ParameterKey: aws.String("FlightPreloadSoftware"),
+      ParameterValue: aws.String(viper.GetString("preload-software")),
+    },
+    {
+      ParameterKey: aws.String("FlightSchedulerType"),
+      ParameterValue: aws.String(viper.GetString("scheduler-type")),
+    },
+    {
+      ParameterKey: aws.String("VolumeLayout"),
+      ParameterValue: aws.String(viper.GetString("master-volume-layout")),
+    },
+    {
+      ParameterKey: aws.String("VolumeEncryptionPolicy"),
+      ParameterValue: aws.String(viper.GetString("master-volume-encryption-policy")),
+    },
+    {
+      ParameterKey: aws.String("LoginSystemVolumeSize"),
+      ParameterValue: aws.String(viper.GetString("master-system-volume-size")),
+    },
+    {
+      ParameterKey: aws.String("LoginSystemVolumeType"),
+      ParameterValue: aws.String(viper.GetString("master-system-volume-type")),
+    },
+    {
+      ParameterKey: aws.String("AppsVolumeSize"),
+      ParameterValue: aws.String(viper.GetString("master-apps-volume-size")),
+    },
+    {
+      ParameterKey: aws.String("AppsVolumeType"),
+      ParameterValue: aws.String(viper.GetString("master-apps-volume-type")),
+    },
+    {
+      ParameterKey: aws.String("HomeVolumeSize"),
+      ParameterValue: aws.String(viper.GetString("master-home-volume-size")),
+    },
+    {
+      ParameterKey: aws.String("HomeVolumeType"),
+      ParameterValue: aws.String(viper.GetString("master-home-volume-type")),
+    },
+  }
+  instanceType := viper.GetString("master-instance-override")
+  if instanceType != "" {
+    params = append(params, []*cloudformation.Parameter{
+      {
+        ParameterKey: aws.String("LoginInstanceType"),
+        ParameterValue: aws.String("other"),
+      },
+      {
+        ParameterKey: aws.String("LoginInstanceTypeOther"),
+        ParameterValue: aws.String(instanceType),
+      },
+    }...)
+  } else {
+    params = append(params, &cloudformation.Parameter{
+      ParameterKey: aws.String("LoginInstanceType"),
+      ParameterValue: aws.String(viper.GetString("master-instance-type")),
+    })
   }
   return params, nil
 }
+
 
 func createComputeLaunchParameters(cluster *Cluster) ([]*cloudformation.Parameter, error) {
   params := []*cloudformation.Parameter{
@@ -430,16 +503,20 @@ func createComputeLaunchParameters(cluster *Cluster) ([]*cloudformation.Paramete
       ParameterValue: aws.String(cluster.Network.NetworkIndex()),
     },
     {
+      ParameterKey: aws.String("FlightSchedulerType"),
+      ParameterValue: aws.String(viper.GetString("scheduler-type")),
+    },
+    {
       ParameterKey: aws.String("ComputeSpotPrice"),
-      ParameterValue: aws.String("0.5"),
+      ParameterValue: aws.String(viper.GetString("compute-spot-price")),
     },
     {
       ParameterKey: aws.String("ComputeAutoscalingPolicy"),
-      ParameterValue: aws.String("enabled"),
+      ParameterValue: aws.String(viper.GetString("compute-autoscaling-policy")),
     },
     {
       ParameterKey: aws.String("ComputeInitialNodes"),
-      ParameterValue: aws.String("1"),
+      ParameterValue: aws.String(viper.GetString("compute-initial-nodes")),
     },
     {
       ParameterKey: aws.String("FlightPrivateSubnet"),
@@ -455,15 +532,15 @@ func createComputeLaunchParameters(cluster *Cluster) ([]*cloudformation.Paramete
     },
     {
       ParameterKey: aws.String("FlightFeatures"),
-      ParameterValue: aws.String(""),
+      ParameterValue: aws.String(viper.GetString("compute-features")),
     },
     {
       ParameterKey: aws.String("FlightProfileBucket"),
-      ParameterValue: aws.String(""),
+      ParameterValue: aws.String(viper.GetString("profile-bucket")),
     },
     {
       ParameterKey: aws.String("FlightProfiles"),
-      ParameterValue: aws.String(""),
+      ParameterValue: aws.String(viper.GetString("compute-profiles")),
     },
     {
       ParameterKey: aws.String("FlightLoginPrivateIP"),
@@ -473,6 +550,24 @@ func createComputeLaunchParameters(cluster *Cluster) ([]*cloudformation.Paramete
       ParameterKey: aws.String("FlightPrivateRouteTable"),
       ParameterValue: aws.String(cluster.Network.PrivateRouteTable()),
     },
+  }
+  instanceType := viper.GetString("compute-instance-override")
+  if instanceType != "" {
+    params = append(params, []*cloudformation.Parameter{
+      {
+        ParameterKey: aws.String("ComputeInstanceType"),
+        ParameterValue: aws.String("other"),
+      },
+      {
+        ParameterKey: aws.String("ComputeInstanceTypeOther"),
+        ParameterValue: aws.String(instanceType),
+      },
+    }...)
+  } else {
+    params = append(params, &cloudformation.Parameter{
+      ParameterKey: aws.String("ComputeInstanceType"),
+      ParameterValue: aws.String(viper.GetString("compute-instance-type")),
+    })
   }
   return params, nil
 }

@@ -30,8 +30,11 @@ package attendant
 
 import (
   "fmt"
+  "strings"
   "time"
-  
+
+  "github.com/spf13/viper"
+
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/cloudformation"
 )
@@ -90,7 +93,7 @@ func (a *Appliance) Create() error {
   case "directory":
     launchParams = createDirectoryLaunchParameters(a.Domain)
   case "access-manager", "storage-manager":
-    launchParams = createApplianceLaunchParameters(a.Domain)
+    launchParams = createApplianceLaunchParameters(a)
   default:
     return fmt.Errorf("Appliance unsupported: %s", a.Name)
   }
@@ -139,7 +142,30 @@ func (a Appliance) Destroy() error {
   return err
 }
 
+func (a Appliance) GetAccessDetails() string {
+  var details string
+  switch a.Name {
+  case "directory":
+    ip := getStackOutput(a.Stack, "DirectoryAccessIP")
+    keypair := getStackParameter(a.Stack, "AccessKeyName")
+    url := getStackOutput(a.Stack, "DirectoryWebAccess")
+    password := strings.Split(strings.Split(getStackOutput(a.Stack, "ConfigurationResult"), "\"")[3]," ")[2]
+    details = fmt.Sprintf("IP address: %s\nKey pair: %s\nAccess URL: %s\nAdministrator password: %s\n", ip, keypair, url, password)
+  case "storage-manager":
+    url := getStackOutput(a.Stack, "StorageManagerWebAccess")
+    details = fmt.Sprintf("Access URL: %s\n", url)
+  case "access-manager":
+    url := getStackOutput(a.Stack, "AccessManagerWebAccess")
+    details = fmt.Sprintf("Access URL: %s\n", url)
+  }
+  return details
+}
+
 func createDirectoryLaunchParameters(domain *Domain) []*cloudformation.Parameter {
+  instanceType := viper.GetString("directory-instance-type")
+  if instanceType == "" { instanceType = viper.GetString("appliance-instance-type") }
+  if instanceType == "" { instanceType = ApplianceInstanceTypes[0] }
+
   params := []*cloudformation.Parameter{
     {
       ParameterKey: aws.String("AccessKeyName"),
@@ -147,19 +173,19 @@ func createDirectoryLaunchParameters(domain *Domain) []*cloudformation.Parameter
     },
     {
       ParameterKey: aws.String("AccessNetwork"),
-      ParameterValue: aws.String("0.0.0.0/0"),
+      ParameterValue: aws.String(viper.GetString("access-network")),
     },
     {
       ParameterKey: aws.String("FlightProfileBucket"),
-      ParameterValue: aws.String(""),
+      ParameterValue: aws.String(viper.GetString("profile-bucket")),
     },
     {
       ParameterKey: aws.String("FlightProfiles"),
-      ParameterValue: aws.String(""),
+      ParameterValue: aws.String(viper.GetString("directory-profiles")),
     },
     {
       ParameterKey: aws.String("ApplianceInstanceType"),
-      ParameterValue: aws.String(Config().ApplianceInstanceType),
+      ParameterValue: aws.String(instanceType),
     },
     {
       ParameterKey: aws.String("FlightDomain"),
@@ -181,7 +207,12 @@ func createDirectoryLaunchParameters(domain *Domain) []*cloudformation.Parameter
   return params
 }
 
-func createApplianceLaunchParameters(domain *Domain) []*cloudformation.Parameter {
+func createApplianceLaunchParameters(appliance *Appliance) []*cloudformation.Parameter {
+  instanceType := viper.GetString(appliance.Name + "-instance-type")
+  if instanceType == "" { instanceType = viper.GetString("appliance-instance-type") }
+  if instanceType == "" { instanceType = ApplianceInstanceTypes[0] }
+  domain := appliance.Domain
+
   params := []*cloudformation.Parameter{
     {
       ParameterKey: aws.String("AccessKeyName"),
@@ -189,19 +220,19 @@ func createApplianceLaunchParameters(domain *Domain) []*cloudformation.Parameter
     },
     {
       ParameterKey: aws.String("AccessNetwork"),
-      ParameterValue: aws.String("0.0.0.0/0"),
+      ParameterValue: aws.String(viper.GetString("access-network")),
     },
     {
       ParameterKey: aws.String("FlightProfileBucket"),
-      ParameterValue: aws.String(""),
+      ParameterValue: aws.String(viper.GetString("profile-bucket")),
     },
     {
       ParameterKey: aws.String("FlightProfiles"),
-      ParameterValue: aws.String(""),
+      ParameterValue: aws.String(viper.GetString(appliance.Name + "-profiles")),
     },
     {
       ParameterKey: aws.String("ApplianceInstanceType"),
-      ParameterValue: aws.String(Config().ApplianceInstanceType),
+      ParameterValue: aws.String(instanceType),
     },
     {
       ParameterKey: aws.String("FlightDomain"),
@@ -217,7 +248,7 @@ func createApplianceLaunchParameters(domain *Domain) []*cloudformation.Parameter
     },
     {
       ParameterKey: aws.String("FlightFeatures"),
-      ParameterValue: aws.String(""),
+      ParameterValue: aws.String(viper.GetString(appliance.Name + "-features")),
     },
   }
   return params

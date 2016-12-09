@@ -54,16 +54,6 @@ var infraLaunchCmd = &cobra.Command{
       }
 		}
 
-    applianceInstanceType := viper.GetString("appliance-instance-type")
-    if applianceInstanceType != "" {
-      if attendant.IsValidApplianceInstanceType(applianceInstanceType) == true {
-        attendant.Config().ApplianceInstanceType = applianceInstanceType
-      } else {
-        fmt.Printf("Invalid instance type '%s'. Try one of: %s\n", applianceInstanceType, attendant.ApplianceInstanceTypes)
-        return
-      }
-    }
-
     if err := setupKeyPair("infraLaunch"); err != nil {
       fmt.Println(err.Error())
       return
@@ -76,16 +66,22 @@ var infraLaunchCmd = &cobra.Command{
     }
 
     if all {
-      for appliance, _ := range attendant.ApplianceTemplates {
-        fmt.Printf("Launching appliance '%s' in domain '%s' (%s)...\n\n", appliance, domain.Name, attendant.Config().AwsRegion)
-        _, err = launchAppliance(domain, appliance)
+      for applianceName, _ := range attendant.ApplianceTemplates {
+        fmt.Printf("Launching appliance '%s' in domain '%s' (%s)...\n\n", applianceName, domain.Name, attendant.Config().AwsRegion)
+        appliance, err := launchAppliance(domain, applianceName)
         if err != nil { break }
         fmt.Println("\nAppliance launched.\n")
+        fmt.Println("== Access details ==")
+        fmt.Println(appliance.GetAccessDetails() + "\n")
       }
     } else {
       fmt.Printf("Launching appliance '%s' in domain '%s' (%s)...\n\n", args[0], domain.Name, attendant.Config().AwsRegion)
-      _, err = launchAppliance(domain, args[0])
-      if err == nil { fmt.Println("\nAppliance launched.") }
+      appliance, err := launchAppliance(domain, args[0])
+      if err == nil {
+        fmt.Println("\nAppliance launched.\n")
+        fmt.Println("== Access details ==")
+        fmt.Println(appliance.GetAccessDetails() + "\n")
+      }
     }
 		if err != nil {
 			fmt.Println(err.Error())
@@ -99,13 +95,19 @@ func init() {
   addDomainFlag(infraLaunchCmd, "infraLaunch")
   addKeyPairFlag(infraLaunchCmd, "infraLaunch")
 
-  infraLaunchCmd.Flags().StringP("instance-type", "i", attendant.ApplianceInstanceTypes[0], "Appliance instance type")
+  infraLaunchCmd.Flags().StringP("instance-type", "i", "", fmt.Sprintf("Appliance instance type (default: %s)", attendant.ApplianceInstanceTypes[0]))
   viper.BindPFlag("appliance-instance-type", infraLaunchCmd.Flags().Lookup("instance-type"))
 
   infraLaunchCmd.Flags().BoolP("all", "a", false, "Launch all infrastructure appliances into a domain")
 }
 
 func launchAppliance(domain *attendant.Domain, name string) (*attendant.Appliance, error) {
+  instanceType := viper.GetString(name + "-instance-type")
+  if instanceType == "" { instanceType = viper.GetString("appliance-instance-type") }
+  if instanceType != "" && ! attendant.IsValidApplianceInstanceType(instanceType) {
+    return nil, fmt.Errorf("Invalid instance type '%s'. Try one of: %s\n", instanceType, attendant.ApplianceInstanceTypes)
+  }
+
   handler, err := attendant.CreateCreateHandler(attendant.ApplianceResourceCounts[name])
   if err != nil { return nil, err }
   appliance := attendant.NewAppliance(name, domain, handler)

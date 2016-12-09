@@ -30,6 +30,7 @@ package cmd
 
 import (
 	"fmt"
+  "strings"
   
 	"github.com/spf13/cobra"
 
@@ -60,20 +61,28 @@ var domainStatusCmd = &cobra.Command{
     }
 
     fmt.Printf(">>> Domain '%s' (%s) <<<\n\n", domain.Name, attendant.Config().AwsRegion)
-    
-    fmt.Println("== Infrastructure ==")
+
+    fmt.Println("== Infrastructure ==\n")
     if len(status.Appliances) > 0 {
       for _, appliance := range status.Appliances {
-        fmt.Println(appliance.Name)
+        fmt.Println("    " + appliance.Name)
+        fmt.Println("    " + strings.Repeat("-", len(appliance.Name)))
+        for _, s := range strings.Split(appliance.GetAccessDetails(),"\n") {
+          fmt.Println("    " + s)
+        }
       }
     } else {
-      fmt.Println("<none>")
+      fmt.Println("<none>\n")
     }
 
-    fmt.Println("\n== Clusters ==")
+    fmt.Println("== Clusters ==\n")
     if len(status.Clusters) > 0 {
       for _, cluster := range status.Clusters {
-        fmt.Println(cluster.Name)
+        fmt.Println("    " + cluster.Name)
+        fmt.Println("    " + strings.Repeat("-", len(cluster.Name)))
+        for _, s := range strings.Split(cluster.GetAccessDetails(),"\n") {
+          fmt.Println("    " + s)
+        }
       }
     } else {
       fmt.Println("<none>")
