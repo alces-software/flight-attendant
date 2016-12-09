@@ -43,7 +43,7 @@ var cfgFile string
 
 // RootCmd represents the base command when called without any subcommands
 var RootCmd = &cobra.Command{
-	Use:   "flight-attendant",
+	Use:   "fly",
 	Short: "Helper utility for lauching Alces Flight Enterprise clusters",
 	Long: `Alces Flight Attendant is a command-line helper utility that makes it
 quick and easy to launch Alces Flight enterprise infrastructure
