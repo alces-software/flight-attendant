@@ -236,20 +236,6 @@ func (c Cluster) GetAccessDetails() string {
   return fmt.Sprintf("IP address: %s\nKey pair: %s\nAdministrator username: %s\nAccess URL: %s\n", ip, keypair, username, url)
 }
 
-func ClusterNames() ([]string, error) {
-  var clusters []string
-
-  err := eachRunningStack(func(stack *cloudformation.Stack) {
-    for _, tag := range stack.Tags {
-      if *tag.Key == "flight:type" && *tag.Value == "master" {
-        clusters = append(clusters, getStackParameter(stack, "ClusterName"))
-      }
-    }
-  })
-
-  return clusters, err
-}
-
 func destroyComputeGroup(cluster *Cluster, index int, svc *cloudformation.CloudFormation) error {
   stackName := fmt.Sprintf("flight-%s-%s-compute-%d",
     cluster.Domain.Name,

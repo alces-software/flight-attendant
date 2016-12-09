@@ -30,7 +30,8 @@ package cmd
 
 import (
 	"fmt"
-
+  "strings"
+  
 	"github.com/spf13/cobra"
 
 	"github.com/alces-software/flight-attendant/attendant"
@@ -42,23 +43,38 @@ var clusterListCmd = &cobra.Command{
 	Short: "List running Flight Compute clusters",
 	Long: `List running Flight Compute clusters.`,
 	Run: func(cmd *cobra.Command, args []string) {
-    var clusters []string
+    var status *attendant.DomainStatus
     var err error
-    
-    attendant.Spin(func() {
-      clusters, err = attendant.ClusterNames()
-    })
+
+    domain, err := findDomain("clusterList")
+    if err != nil {
+      fmt.Println(err.Error())
+      return
+    }
+
+    attendant.Spin(func() { status, err = domain.Status() })
+
 		if err != nil {
 			fmt.Println(err.Error())
 			return
 		}
 
-		for _, cluster := range clusters {
-      fmt.Println(cluster)
-		}
+    fmt.Println("== Clusters ==\n")
+    if len(status.Clusters) > 0 {
+      for _, cluster := range status.Clusters {
+        fmt.Println("    " + cluster.Name)
+        fmt.Println("    " + strings.Repeat("-", len(cluster.Name)))
+        for _, s := range strings.Split(cluster.GetAccessDetails(),"\n") {
+          fmt.Println("    " + s)
+        }
+      }
+    } else {
+      fmt.Println("<none>")
+    }
 	},
 }
 
 func init() {
 	clusterCmd.AddCommand(clusterListCmd)
+  addDomainFlag(clusterListCmd, "clusterList")
 }
