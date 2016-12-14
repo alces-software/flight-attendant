@@ -41,7 +41,7 @@ var ConfigDefaults = map[string]string {
   "access-key": "",
   "secret-key": "",
   "template-root": "",
-  "template-set": "default",
+  "template-set": FlightRelease,
 
   "admin-user-name": "alces",
   "access-network": "0.0.0.0/0",
@@ -105,7 +105,7 @@ func Config() *Configuration {
     AwsRegion: "us-east-1",
     AccessKeyName: "flight-admin",
     TemplateRoot: DefaultTemplateRoot,
-    TemplateSet: "default",
+    TemplateSet: FlightRelease,
   }
   return config
 }

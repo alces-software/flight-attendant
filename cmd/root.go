@@ -52,7 +52,10 @@ on your Alces Flight Compute architecture.`,
 // Uncomment the following line if your bare application
 // has an action associated with it:
 	Run: func(cmd *cobra.Command, args []string) {
-    if v, _ := cmd.Flags().GetBool("show-config-example"); v {
+    if v, _ := cmd.Flags().GetBool("version"); v {
+      fmt.Printf("Flight Attendant v%s %s (Flight Compute %s)\n", attendant.Version, attendant.ReleaseDate, attendant.FlightRelease)
+      return
+    } else if v, _ := cmd.Flags().GetBool("show-config-example"); v {
       cfg, err := attendant.RenderConfig()
       if err != nil {
         fmt.Println(err.Error())
@@ -88,6 +91,7 @@ func init() {
 	RootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.flight.yml)")
   defaultRegion := os.Getenv("AWS_REGION")
   if defaultRegion == "" { defaultRegion = "us-east-1" }
+  RootCmd.Flags().Bool("version", false, "Show version information")
   RootCmd.PersistentFlags().String("region", defaultRegion, "AWS region")
   RootCmd.PersistentFlags().String("access-key", "", "AWS access key ID")
   RootCmd.PersistentFlags().String("secret-key", "", "AWS secret access key")

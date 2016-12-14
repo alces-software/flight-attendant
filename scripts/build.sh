@@ -31,14 +31,30 @@
 #     GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 ./make.bash --no-clean
 #     GOOS=linux GOARCH=386 CGO_ENABLED=0 ./make.bash --no-clean
 
-set -x
+if [ -z "$2" ]; then
+    echo "Usage: $0 <version> <flight release>"
+    exit 1
+fi
+
+cd $(dirname "$0")/..
 
 go get ./...
 
+pkg="github.com/alces-software/flight-attendant/attendant"
+ldflags="-X $pkg.ReleaseDate=$(date +%Y-%m-%d)"
+version=${1:-0.0.0}
+ldflags="$ldflags -X $pkg.Version=$version"
+release=${2:-2016.4-dev}
+ldflags="$ldflags -X $pkg.FlightRelease=$release"
+
+echo "Building for v${version}, release ${release}..."
 for DEST in linux-386 linux-amd64 darwin-amd64; do
     OS=${DEST%-*}
     ARCH=${DEST#*-}
     DIR=pkg/$DEST
     mkdir -p $DIR
-    GOOS=$OS GOARCH=$ARCH go build -o $DIR/fly .
+    echo "Building $OS/$ARCH..."
+    GOOS=$OS GOARCH=$ARCH go build \
+        -ldflags "${ldflags}" \
+        -o $DIR/fly .
 done
