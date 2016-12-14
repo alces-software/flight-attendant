@@ -46,6 +46,12 @@ var domainCreateCmd = &cobra.Command{
 			cmd.Help()
 			return
 		}
+
+    if err := setupTemplateSource("domainCreate"); err != nil {
+      fmt.Println(err.Error())
+      return
+    }
+
     fmt.Printf("Creating domain '%s' (%s)...\n\n", args[0], attendant.Config().AwsRegion)
     _, err := createDomain(args[0])
 		if err != nil {
@@ -58,6 +64,8 @@ var domainCreateCmd = &cobra.Command{
 
 func init() {
 	domainCmd.AddCommand(domainCreateCmd)
+  addTemplateSetFlag(domainCreateCmd, "domainCreate")
+  addTemplateRootFlag(domainCreateCmd, "domainCreate")
 }
 
 func createDomain(name string) (*attendant.Domain, error) {

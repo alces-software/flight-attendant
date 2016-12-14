@@ -64,28 +64,42 @@ var clusterLaunchCmd = &cobra.Command{
       }
     }
 
+    if err := setupTemplateSource("clusterLaunch"); err != nil {
+      fmt.Println(err.Error())
+      return
+    }
+
     if err := setupKeyPair("clusterLaunch"); err != nil {
       fmt.Println(err.Error())
       return
     }
 
-    domain, err := findDomain("clusterLaunch")
+    var cluster *attendant.Cluster
+    var domain *attendant.Domain
+    var err error
+    solo, _ := cmd.Flags().GetBool("solo")
+    if solo {
+      fmt.Printf("Launching Flight Compute Solo cluster '%s' (%s)...\n\n", args[0], attendant.Config().AwsRegion)
+      domain = nil
+    } else {
+      domain, err = findDomain("clusterLaunch", true)
+      if err != nil {
+        fmt.Println(err.Error())
+        return
+      }
+
+      if err = domain.AssertReady(); err != nil {
+        fmt.Println("Domain is not ready: " + domain.Name)
+        return
+      }
+
+      fmt.Printf("Launching cluster '%s' in domain '%s' (%s)...\n\n", args[0], domain.Name, attendant.Config().AwsRegion)
+    }
+    cluster, err = launchCluster(domain, args[0])
     if err != nil {
       fmt.Println(err.Error())
       return
     }
-
-    if err = domain.AssertReady(); err != nil {
-      fmt.Println("Domain is not ready: " + domain.Name)
-      return
-    }
-
-    fmt.Printf("Launching cluster '%s' in domain '%s' (%s)...\n\n", args[0], domain.Name, attendant.Config().AwsRegion)
-    cluster, err := launchCluster(domain, args[0])
-		if err != nil {
-			fmt.Println(err.Error())
-			return
-		}
     fmt.Println("\nCluster launched.\n")
     fmt.Println("== Access details ==")
     fmt.Println(cluster.GetAccessDetails() + "\n")
@@ -95,6 +109,7 @@ var clusterLaunchCmd = &cobra.Command{
 
 func init() {
 	clusterCmd.AddCommand(clusterLaunchCmd)
+  clusterLaunchCmd.Flags().BoolP("solo", "s", false, "Launch a Flight Compute Solo cluster")
 
   clusterLaunchCmd.Flags().StringP("compute-instance-type", "c", attendant.ComputeInstanceTypes[0], "Compute instance type")
   viper.BindPFlag("compute-instance-type", clusterLaunchCmd.Flags().Lookup("compute-instance-type"))
@@ -102,12 +117,22 @@ func init() {
   clusterLaunchCmd.Flags().StringP("master-instance-type", "m", attendant.MasterInstanceTypes[0], "Master instance type")
   viper.BindPFlag("master-instance-type", clusterLaunchCmd.Flags().Lookup("master-instance-type"))
 
+  //RootCmd.PersistentFlags().String("template-set", "default", "Template set")
+
   addKeyPairFlag(clusterLaunchCmd, "clusterLaunch")
   addDomainFlag(clusterLaunchCmd, "clusterLaunch")
+  addTemplateSetFlag(clusterLaunchCmd, "clusterLaunch")
+  addTemplateRootFlag(clusterLaunchCmd, "clusterLaunch")
 }
 
 func launchCluster(domain *attendant.Domain, name string) (*attendant.Cluster, error) {
-  handler, err := attendant.CreateCreateHandler(attendant.ClusterResourceCount)
+  var count int
+  if domain == nil {
+    count = attendant.SoloClusterResourceCount
+  } else {
+    count = attendant.ClusterResourceCount
+  }
+  handler, err := attendant.CreateCreateHandler(count)
   if err != nil { return nil, err }
   cluster := attendant.NewCluster(name, domain, handler)
   attendant.Spin(func() { err = cluster.Create() })

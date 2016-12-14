@@ -91,14 +91,12 @@ func init() {
   RootCmd.PersistentFlags().String("region", defaultRegion, "AWS region")
   RootCmd.PersistentFlags().String("access-key", "", "AWS access key ID")
   RootCmd.PersistentFlags().String("secret-key", "", "AWS secret access key")
-  RootCmd.PersistentFlags().String("template-set", "default", "Template set")
   RootCmd.Flags().Bool("show-config-example", false, "Display an example configuration file")
   RootCmd.Flags().Bool("show-config-values", false, "Display valid configuration values")
 
   viper.BindPFlag("region", RootCmd.PersistentFlags().Lookup("region"))
   viper.BindPFlag("access-key", RootCmd.PersistentFlags().Lookup("access-key"))
   viper.BindPFlag("secret-key", RootCmd.PersistentFlags().Lookup("secret-key"))
-  viper.BindPFlag("template-set", RootCmd.PersistentFlags().Lookup("template-set"))
 
   for key, val := range attendant.ConfigDefaults {
     viper.SetDefault(key, val)
@@ -138,10 +136,6 @@ func initConfig() {
   if cfg.AwsSecretKey == "" {
      cfg.AwsSecretKey = os.Getenv("AWS_SECRET_ACCESS_KEY")
   }
-
-  if attendant.TemplateSets[viper.GetString("template-set")] != "" {
-    cfg.TemplateSet = viper.GetString("template-set")
-  }
 }
 
 func addDomainFlag(command *cobra.Command, cmdName string) {
@@ -149,13 +143,17 @@ func addDomainFlag(command *cobra.Command, cmdName string) {
   viper.BindPFlag("domain:" + cmdName, command.Flags().Lookup("domain"))
 }
 
-func findDomain(cmdName string) (*attendant.Domain, error) {
+func findDomain(cmdName string, defaultOk bool) (*attendant.Domain, error) {
   var domain *attendant.Domain
   var err error
   name := viper.GetString("domain:" + cmdName)
   if name == "" { name = viper.GetString("domain") }
   if name == "" {
-    domain, err = attendant.DefaultDomain()
+    if defaultOk {
+      domain, err = attendant.DefaultDomain()
+    } else {
+      return nil, fmt.Errorf("This operation requires you to specify a domain")
+    }
   } else {
     domain = attendant.NewDomain(name, nil)
     err = domain.AssertExists()
@@ -179,6 +177,34 @@ func setupKeyPair(cmdName string) error {
   }
   if ! attendant.Config().IsValidKeyPair() {
     return fmt.Errorf("Invalid key pair name '%s'.\n", attendant.Config().AccessKeyName)
+  }
+  return nil
+}
+
+func addTemplateSetFlag(command *cobra.Command, cmdName string) {
+  command.Flags().String("template-set", "", "Select a predefined template set")
+  viper.BindPFlag("template-set:" + cmdName, command.Flags().Lookup("template-set"))
+}
+
+func addTemplateRootFlag(command *cobra.Command, cmdName string) {
+  command.Flags().String("template-root", "", "Specify an explicit template root URL")
+  viper.BindPFlag("template-root:" + cmdName, command.Flags().Lookup("template-root"))
+}
+
+func setupTemplateSource(cmdName string) error {
+  templateRoot := viper.GetString("template-root:" + cmdName)
+  templateSet := viper.GetString("template-set:" + cmdName)
+  if templateRoot != "" && templateSet != "" {
+    return fmt.Errorf("Template set cannot be used in conjunction with template root\n")
+  } else {
+    if templateRoot == "" { templateRoot = viper.GetString("template-root") }
+    if templateSet == "" { templateSet = viper.GetString("template-set") }
+    if templateRoot != "" {
+      attendant.Config().TemplateRoot = templateRoot
+      attendant.Config().TemplateSet = ""
+    } else if templateSet != "" {
+      attendant.Config().TemplateSet = templateSet
+    }
   }
   return nil
 }

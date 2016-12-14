@@ -81,7 +81,7 @@ func (a *Appliance) Create() error {
 	svc, err := CloudFormation()
   if err != nil { return err }
 
-  url := fmt.Sprintf(TemplateSets[Config().TemplateSet],ApplianceTemplates[a.Name])
+  url := TemplateUrl(ApplianceTemplates[a.Name])
   if url == "" {
     return fmt.Errorf("Unknown appliance type: %s", a.Name)
   }
@@ -106,6 +106,7 @@ func (a *Appliance) Create() error {
     &cloudformation.Tag{Key: aws.String("flight:appliance"), Value: aws.String(a.Name)},
   }
   stack, err := createStack(svc, launchParams, tags, url, stackName, "appliance", *tArn, a.Domain)
+
   if err != nil { cleanupEventHandling(stackName) }
 
   a.MessageHandler("DONE")

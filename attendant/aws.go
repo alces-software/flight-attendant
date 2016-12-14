@@ -136,22 +136,31 @@ func createStack(
   topicArn string,
   domain *Domain) (*cloudformation.Stack, error) {
 
+  var stackTags []*cloudformation.Tag
+  stackTags = append(tags, []*cloudformation.Tag{
+    {
+      Key: aws.String("flight:type"),
+      Value: aws.String(stackType),
+    },
+    {
+      Key: aws.String("flight:template"),
+      Value: aws.String(templateUrl),
+    },
+  }...)
+  if domain != nil {
+    stackTags = append(stackTags, &cloudformation.Tag{
+      Key: aws.String("flight:domain"),
+      Value: aws.String(domain.Name),
+    })
+  }
+
   createParams := &cloudformation.CreateStackInput{
     Capabilities: []*string{aws.String("CAPABILITY_IAM")},
     NotificationARNs: []*string{aws.String(topicArn)},
 		StackName: aws.String(stackName),
 		TemplateURL: aws.String(templateUrl),
     Parameters: params,
-		Tags: append(tags, []*cloudformation.Tag{
-      {
-				Key: aws.String("flight:domain"),
-				Value: aws.String(domain.Name),
-			},
-      {
-        Key: aws.String("flight:type"),
-        Value: aws.String(stackType),
-      },
-    }...),
+		Tags: stackTags,
 	}
 
 	_, err := svc.CreateStack(createParams)

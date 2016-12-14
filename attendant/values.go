@@ -72,8 +72,16 @@ var InstanceTypes []string = []string{
   "t2.small-1C-2GB",
   "t2.medium-2C-4GB",
   "t2.large-2C-8GB",
+  "t2.xlarge-4C-16GB",
+  "t2.2xlarge-8C-32GB",
   "x1.16xlarge-64C-076GB",
   "x1.32xlarge-128C-1952GB",
+  "r4.large-2C-15.25GB",
+  "r4.xlarge-4C-30.5GB",
+  "r4.2xlarge-8C-61GB",
+  "r4.4xlarge-16C-122GB",
+  "r4.8xlarge-32C-244GB",
+  "r4.16xlarge-64C-488GB",
 }
 
 var SystemVolumeTypes = []string {

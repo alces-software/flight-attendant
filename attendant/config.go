@@ -34,16 +34,15 @@ import (
   "gopkg.in/yaml.v2"
 )
 
-var TemplateSets = map[string]string {
-  "default": "https://s3-eu-west-1.amazonaws.com/alces-flight/Templates/%s",
-}
+var DefaultTemplateRoot = "https://s3-eu-west-1.amazonaws.com/alces-flight/Templates"
 
 var ConfigDefaults = map[string]string {
   "region": "us-east-1",
   "access-key": "",
   "secret-key": "",
+  "template-root": "",
   "template-set": "default",
-  
+
   "admin-user-name": "alces",
   "access-network": "0.0.0.0/0",
   "scheduler-type": "gridscheduler",
@@ -91,8 +90,9 @@ type Configuration struct {
   AwsRegion string
   AwsAccessKey string
   AwsSecretKey string
-  TemplateSet string
   AccessKeyName string
+  TemplateRoot string
+  TemplateSet string
 }
 
 var config *Configuration
@@ -104,6 +104,8 @@ func Config() *Configuration {
   config = &Configuration{
     AwsRegion: "us-east-1",
     AccessKeyName: "flight-admin",
+    TemplateRoot: DefaultTemplateRoot,
+    TemplateSet: "default",
   }
   return config
 }
@@ -118,11 +120,6 @@ func RenderConfig() ([]byte, error) {
 
 func RenderConfigValues() (string, error) {
   s := ""
-  var templateSets []string
-  for v, _ := range TemplateSets {
-    templateSets = append(templateSets, v)
-  }
-  s += fmt.Sprintf(" == template set ==\n\n     %s\n\n", strings.Join(templateSets, "\n     "))
   s += fmt.Sprintf(" == compute instance type ==\n\n     %s\n\n", strings.Join(ComputeInstanceTypes, "\n     "))
   s += fmt.Sprintf(" == master instance type ==\n\n     %s\n\n", strings.Join(MasterInstanceTypes, "\n     "))
   s += fmt.Sprintf(" == appliance instance type ==\n\n     %s\n\n", strings.Join(ApplianceInstanceTypes, "\n     "))
@@ -132,4 +129,15 @@ func RenderConfigValues() (string, error) {
   s += fmt.Sprintf(" == preload software ==\n\n     %s\n\n", strings.Join(SoftwareTypes, "\n     "))
   s += fmt.Sprintf(" == scheduler type ==\n\n     %s\n\n", strings.Join(SchedulerTypes, "\n     "))
   return s, nil
+}
+
+func TemplateUrl(templateName string) string {
+  templateSet := Config().TemplateSet
+  var url string
+  if templateSet == "" {
+    url = Config().TemplateRoot + "/" + templateName
+  } else {
+    url = Config().TemplateRoot + "/" + Config().TemplateSet + "/" + templateName
+  }
+  return url
 }

@@ -46,20 +46,28 @@ var clusterListCmd = &cobra.Command{
     var status *attendant.DomainStatus
     var err error
 
-    domain, err := findDomain("clusterList")
-    if err != nil {
-      fmt.Println(err.Error())
-      return
+    solo, _ := cmd.Flags().GetBool("solo")
+    if solo {
+      attendant.Spin(func() { status, err = attendant.SoloStatus() })
+    } else {
+      domain, err := findDomain("clusterList", true)
+      if err != nil {
+        fmt.Println(err.Error())
+        return
+      }
+      attendant.Spin(func() { status, err = domain.Status() })
     }
-
-    attendant.Spin(func() { status, err = domain.Status() })
 
 		if err != nil {
 			fmt.Println(err.Error())
 			return
 		}
 
-    fmt.Println("== Clusters ==\n")
+    if solo {
+      fmt.Println("== Solo Clusters ==\n")
+    } else {
+      fmt.Println("== Clusters ==\n")
+    }
     if len(status.Clusters) > 0 {
       for _, cluster := range status.Clusters {
         fmt.Println("    " + cluster.Name)
@@ -77,4 +85,5 @@ var clusterListCmd = &cobra.Command{
 func init() {
 	clusterCmd.AddCommand(clusterListCmd)
   addDomainFlag(clusterListCmd, "clusterList")
+  clusterListCmd.Flags().BoolP("solo", "s", false, "List Flight Compute Solo clusters")
 }

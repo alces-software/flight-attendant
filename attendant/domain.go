@@ -96,6 +96,19 @@ func (d *Domain) getOutput(key string) string {
   return getStackOutput(d.Stack, key)
 }
 
+func SoloStatus() (*DomainStatus, error) {
+  var soloStatus = DomainStatus{make(map[string]*Cluster),make(map[string]*Appliance)}
+  err := eachRunningStack(func(stack *cloudformation.Stack) {
+    stackType := getStackTag(stack, "flight:type")
+    if stackType == "solo" {
+      clusterName := getStackTag(stack, "flight:cluster")
+      cluster := &Cluster{Name: clusterName, Master: &Master{stack}}
+      soloStatus.Clusters[clusterName] = cluster
+    }
+  })
+  return &soloStatus, err
+}
+
 func (d *Domain) Status() (*DomainStatus, error) {
   err := d.AssertExists()
   if err != nil { return nil, err }
@@ -215,7 +228,7 @@ func (d *Domain) Create(prefix string) error {
 
 	params := &cloudformation.CreateStackInput{
 		StackName: aws.String(stackName),
-		TemplateURL: aws.String("https://s3-eu-west-1.amazonaws.com/alces-flight/Templates/domain.json"),
+		TemplateURL: aws.String(TemplateUrl("domain.json")),
     NotificationARNs: []*string{tArn},
 		Tags: []*cloudformation.Tag{
 			{
@@ -234,6 +247,10 @@ func (d *Domain) Create(prefix string) error {
 	}
 
 	_, err = svc.CreateStack(params)
+  if err != nil {
+    cleanupEventHandling(stackName)
+    return err
+  }
   stack, err := awaitStack(svc, stackName)
   if err != nil {
     cleanupEventHandling(stackName)

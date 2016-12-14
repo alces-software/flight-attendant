@@ -43,6 +43,8 @@ var infraLaunchCmd = &cobra.Command{
 	Short: "Launch a Flight infrastructure appliance",
 	Long: `Launch a Flight infrastructure appliance.`,
 	Run: func(cmd *cobra.Command, args []string) {
+    var err error
+
     all, _ := cmd.Flags().GetBool("all")
 		if !all {
       if len(args) == 0 {
@@ -54,12 +56,17 @@ var infraLaunchCmd = &cobra.Command{
       }
 		}
 
+    if err := setupTemplateSource("infraLaunch"); err != nil {
+      fmt.Println(err.Error())
+      return
+    }
+
     if err := setupKeyPair("infraLaunch"); err != nil {
       fmt.Println(err.Error())
       return
     }
 
-    domain, err := findDomain("infraLaunch")
+    domain, err := findDomain("infraLaunch", true)
     if err != nil {
       fmt.Println(err.Error())
       return
@@ -67,16 +74,18 @@ var infraLaunchCmd = &cobra.Command{
 
     if all {
       for applianceName, _ := range attendant.ApplianceTemplates {
+        var appliance *attendant.Appliance
         fmt.Printf("Launching appliance '%s' in domain '%s' (%s)...\n\n", applianceName, domain.Name, attendant.Config().AwsRegion)
-        appliance, err := launchAppliance(domain, applianceName)
+        appliance, err = launchAppliance(domain, applianceName)
         if err != nil { break }
         fmt.Println("\nAppliance launched.\n")
         fmt.Println("== Access details ==")
         fmt.Println(appliance.GetAccessDetails() + "\n")
       }
     } else {
+      var appliance *attendant.Appliance
       fmt.Printf("Launching appliance '%s' in domain '%s' (%s)...\n\n", args[0], domain.Name, attendant.Config().AwsRegion)
-      appliance, err := launchAppliance(domain, args[0])
+      appliance, err = launchAppliance(domain, args[0])
       if err == nil {
         fmt.Println("\nAppliance launched.\n")
         fmt.Println("== Access details ==")
@@ -94,6 +103,8 @@ func init() {
 	infraCmd.AddCommand(infraLaunchCmd)
   addDomainFlag(infraLaunchCmd, "infraLaunch")
   addKeyPairFlag(infraLaunchCmd, "infraLaunch")
+  addTemplateSetFlag(infraLaunchCmd, "infraLaunch")
+  addTemplateRootFlag(infraLaunchCmd, "infraLaunch")
 
   infraLaunchCmd.Flags().StringP("instance-type", "i", "", fmt.Sprintf("Appliance instance type (default: %s)", attendant.ApplianceInstanceTypes[0]))
   viper.BindPFlag("appliance-instance-type", infraLaunchCmd.Flags().Lookup("instance-type"))

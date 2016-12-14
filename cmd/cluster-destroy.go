@@ -47,13 +47,21 @@ var clusterDestroyCmd = &cobra.Command{
 			return
 		}
 
-    domain, err := findDomain("clusterDestroy")
-    if err != nil {
-      fmt.Println(err.Error())
-      return
-    }
+    var domain *attendant.Domain
+    var err error
+    solo, _ := cmd.Flags().GetBool("solo")
+    if solo {
+      fmt.Printf("Destroying Flight Compute Solo cluster '%s' in (%s)...\n\n", args[0], attendant.Config().AwsRegion)
+      domain = nil
+    } else {
+      domain, err := findDomain("clusterDestroy", false)
+      if err != nil {
+        fmt.Println(err.Error())
+        return
+      }
 
-    fmt.Printf("Destroying cluster '%s' in domain '%s' (%s)...\n\n", args[0], domain.Name, attendant.Config().AwsRegion)
+      fmt.Printf("Destroying cluster '%s' in domain '%s' (%s)...\n\n", args[0], domain.Name, attendant.Config().AwsRegion)
+    }
     err = destroyCluster(domain, args[0])
     if err != nil {
       fmt.Println(err.Error())
@@ -65,6 +73,7 @@ var clusterDestroyCmd = &cobra.Command{
 
 func init() {
 	clusterCmd.AddCommand(clusterDestroyCmd)
+  clusterDestroyCmd.Flags().BoolP("solo", "s", false, "Destroy Flight Compute Solo cluster")
   addDomainFlag(clusterDestroyCmd, "clusterDestroy")
 }
 

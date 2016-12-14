@@ -53,7 +53,7 @@ var infraDestroyCmd = &cobra.Command{
       }
 		}
 
-    domain, err := findDomain("infraDestroy")
+    domain, err := findDomain("infraDestroy", false)
     if err != nil {
       fmt.Println(err.Error())
       return
