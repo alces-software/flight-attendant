@@ -117,8 +117,6 @@ func init() {
   clusterLaunchCmd.Flags().StringP("master-instance-type", "m", attendant.MasterInstanceTypes[0], "Master instance type")
   viper.BindPFlag("master-instance-type", clusterLaunchCmd.Flags().Lookup("master-instance-type"))
 
-  //RootCmd.PersistentFlags().String("template-set", "default", "Template set")
-
   addKeyPairFlag(clusterLaunchCmd, "clusterLaunch")
   addDomainFlag(clusterLaunchCmd, "clusterLaunch")
   addTemplateSetFlag(clusterLaunchCmd, "clusterLaunch")

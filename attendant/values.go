@@ -28,7 +28,7 @@
 
 package attendant
 
-var Version = "0.1.0-dev"
+var Version = "0.1.1-dev"
 var FlightRelease = "2016.4-dev"
 var ReleaseDate = "Unknown"
 

@@ -214,7 +214,6 @@ func (c *Cluster) Create() error {
 func (c *Cluster) Destroy() error {
 	svc, err := CloudFormation()
   if err != nil { return err }
-
   if c.Domain == nil {
     // destroying a solo cluster
     qUrl, err := getEventQueueUrl("flight-cluster-" + c.Name)
@@ -222,6 +221,11 @@ func (c *Cluster) Destroy() error {
     go c.processQueue(qUrl)
     err = destroySoloCluster(c, svc)
     if err != nil { return err }
+
+    err = cleanupEventHandling("flight-cluster-" + c.Name)
+    if err != nil { return err }
+
+    c.MessageHandler("DONE")
   } else {
     qUrl, err := getEventQueueUrl("flight-" + c.Domain.Name + "-cluster-" + c.Name)
     if err != nil { return err }
