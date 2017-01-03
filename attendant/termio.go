@@ -63,7 +63,9 @@ func CreateDestroyHandler(resourceTotal int) (func(msg string), error) {
 func createHandlerFunction(resourceTotal int, inProgressText, completeText, completionRune string) (func(msg string), error) {
   var resRegistry = make(map[string]int)
   var completeRegistry = make(map[string]bool)
-
+  var disableCounters = false
+  var counterDelta = 0
+  
   if loggingEnabled {
     f, err := os.OpenFile("fly.log", os.O_RDWR | os.O_CREATE | os.O_APPEND, 0666)
     if err != nil { return nil, err }
@@ -89,6 +91,12 @@ func createHandlerFunction(resourceTotal int, inProgressText, completeText, comp
       }
       Spinner().Suffix = ""
       Spinner().Start()
+      return
+    } else if msg == "DISABLE-COUNTERS" {
+      disableCounters = true
+      return
+    } else if msg == "ENABLE-COUNTERS" {
+      disableCounters = false
       return
     }
     s := strings.Split(msg, " ")
@@ -117,9 +125,14 @@ func createHandlerFunction(resourceTotal int, inProgressText, completeText, comp
           c.MoveUp(lines).EraseCurrentLine()
           fmt.Printf("%s  %s\n", completionRune, name)
           c.MoveDown(lines - 1)
+          if disableCounters {
+            counterDelta += 1
+          }
         }
         completeRegistry[res] = true
-        Spinner().Suffix = fmt.Sprintf(" (%d/%d)", len(completeRegistry), resourceTotal)
+        if resourceTotal > 0 && !disableCounters {
+          Spinner().Suffix = fmt.Sprintf(" (%d/%d)", len(completeRegistry) - counterDelta, resourceTotal)
+        }
         Spinner().Start()
       }
     }

@@ -44,40 +44,52 @@ var clusterListCmd = &cobra.Command{
 	Long: `List running Flight Compute clusters.`,
 	Run: func(cmd *cobra.Command, args []string) {
     var status *attendant.DomainStatus
+    var domains []attendant.Domain
     var err error
 
-    solo, _ := cmd.Flags().GetBool("solo")
-    if solo {
-      attendant.Spin(func() { status, err = attendant.SoloStatus() })
-    } else {
-      domain, err := findDomain("clusterList", true)
-      if err != nil {
-        fmt.Println(err.Error())
-        return
-      }
-      attendant.Spin(func() { status, err = domain.Status() })
-    }
-
-		if err != nil {
-			fmt.Println(err.Error())
-			return
-		}
-
-    if solo {
-      fmt.Println("== Solo Clusters ==\n")
-    } else {
-      fmt.Println("== Clusters ==\n")
-    }
-    if len(status.Clusters) > 0 {
-      for _, cluster := range status.Clusters {
-        fmt.Println("    " + cluster.Name)
-        fmt.Println("    " + strings.Repeat("-", len(cluster.Name)))
-        for _, s := range strings.Split(cluster.GetAccessDetails(),"\n") {
-          fmt.Println("    " + s)
+    regions := getRegions(cmd)
+    for _, region := range regions {
+      attendant.Config().AwsRegion = region
+      solo, _ := cmd.Flags().GetBool("solo")
+      all, _ := cmd.Flags().GetBool("all")
+      if !solo || all {
+        if domain, err := findDomain("clusterList", false); err == nil {
+          domains = []attendant.Domain{*domain}
+        } else {
+          if err.Error() == "This operation requires you to specify a domain" {
+            attendant.Spin(func() {
+              domains, err = attendant.AllDomains()
+            })
+          } else {
+            fmt.Println(err.Error())
+            return
+          }
+        }
+        if err != nil {
+          fmt.Println(err.Error())
+          return
+        }
+        for _, domain := range domains {
+          attendant.Spin(func() { status, err = domain.Status() })
+          if err != nil {
+            fmt.Println(err.Error())
+            return
+          }
+          fmt.Printf("== Clusters in '%s' (%s) ==\n", domain.Name, attendant.Config().AwsRegion)
+          printClusters(status)
+          fmt.Println("")
         }
       }
-    } else {
-      fmt.Println("<none>")
+      if solo || all {
+        attendant.Spin(func() { status, err = attendant.SoloStatus() })
+        if err != nil {
+          fmt.Println(err.Error())
+          return
+        }
+        fmt.Printf("== Solo Clusters (%s) ==\n", attendant.Config().AwsRegion)
+        printClusters(status)
+        fmt.Println("")
+      }
     }
 	},
 }
@@ -86,4 +98,20 @@ func init() {
 	clusterCmd.AddCommand(clusterListCmd)
   addDomainFlag(clusterListCmd, "clusterList")
   clusterListCmd.Flags().BoolP("solo", "s", false, "List Flight Compute Solo clusters")
+  clusterListCmd.Flags().BoolP("all", "a", false, "List Flight Compute Enterprise and Solo clusters")
+  clusterListCmd.Flags().String("regions", "", "Select regions to query")
+}
+
+func printClusters(status *attendant.DomainStatus) {
+  if len(status.Clusters) > 0 {
+    for _, cluster := range status.Clusters {
+      fmt.Println("    " + cluster.Name)
+      fmt.Println("    " + strings.Repeat("-", len(cluster.Name)))
+      for _, s := range strings.Split(cluster.GetAccessDetails(),"\n") {
+        fmt.Println("    " + s)
+      }
+    }
+  } else {
+    fmt.Println("<none>")
+  }
 }

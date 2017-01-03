@@ -45,51 +45,77 @@ var domainStatusCmd = &cobra.Command{
 	Short: "Show status of a Flight Compute domain",
 	Long: `Show status a Flight Compute domain.`,
 	Run: func(cmd *cobra.Command, args []string) {
-    var status *attendant.DomainStatus
-    var err error
-    
-		if len(args) == 0 {
+    all, _ := cmd.Flags().GetBool("all")
+
+		if len(args) == 0 && !all {
 			cmd.Help()
 			return
 		}
 
-    domain := attendant.NewDomain(args[0], nil)
-    attendant.Spin(func() { status, err = domain.Status() })
-    if err != nil {
-      fmt.Println(err.Error())
-      return
-    }
-
-    fmt.Printf(">>> Domain '%s' (%s) <<<\n\n", domain.Name, attendant.Config().AwsRegion)
-
-    fmt.Println("== Infrastructure ==\n")
-    if len(status.Appliances) > 0 {
-      for _, appliance := range status.Appliances {
-        fmt.Println("    " + appliance.Name)
-        fmt.Println("    " + strings.Repeat("-", len(appliance.Name)))
-        for _, s := range strings.Split(appliance.GetAccessDetails(),"\n") {
-          fmt.Println("    " + s)
+    if all {
+      regions := getRegions(cmd)
+      for _, region := range regions {
+        var err error
+        var domains []attendant.Domain
+        attendant.Config().AwsRegion = region
+        attendant.Spin(func() { domains, err = attendant.AllDomains() })
+        if err != nil {
+          fmt.Println(err.Error())
+          return
+        }
+        for _, domain := range domains {
+          statusFor(&domain)
+          fmt.Println("")
         }
       }
     } else {
-      fmt.Println("<none>\n")
-    }
-
-    fmt.Println("== Clusters ==\n")
-    if len(status.Clusters) > 0 {
-      for _, cluster := range status.Clusters {
-        fmt.Println("    " + cluster.Name)
-        fmt.Println("    " + strings.Repeat("-", len(cluster.Name)))
-        for _, s := range strings.Split(cluster.GetAccessDetails(),"\n") {
-          fmt.Println("    " + s)
-        }
-      }
-    } else {
-      fmt.Println("<none>")
+      domain := attendant.NewDomain(args[0], nil)
+      statusFor(domain)
     }
 	},
 }
 
 func init() {
 	domainCmd.AddCommand(domainStatusCmd)
+  domainStatusCmd.Flags().Bool("all", false, "Show all domains")
+  domainStatusCmd.Flags().String("regions", "", "Select regions to query")
+}
+
+func statusFor(domain *attendant.Domain) {
+  var err error
+  var status *attendant.DomainStatus
+
+  attendant.Spin(func() { status, err = domain.Status() })
+  if err != nil {
+    fmt.Println(err.Error())
+    return
+  }
+
+  fmt.Printf(">>> Domain '%s' (%s) <<<\n\n", domain.Name, attendant.Config().AwsRegion)
+
+  fmt.Println("== Infrastructure ==\n")
+  if len(status.Appliances) > 0 {
+    for _, appliance := range status.Appliances {
+      fmt.Println("    " + appliance.Name)
+      fmt.Println("    " + strings.Repeat("-", len(appliance.Name)))
+      for _, s := range strings.Split(appliance.GetAccessDetails(),"\n") {
+        fmt.Println("    " + s)
+      }
+    }
+  } else {
+    fmt.Println("<none>\n")
+  }
+
+  fmt.Println("== Clusters ==\n")
+  if len(status.Clusters) > 0 {
+    for _, cluster := range status.Clusters {
+      fmt.Println("    " + cluster.Name)
+      fmt.Println("    " + strings.Repeat("-", len(cluster.Name)))
+      for _, s := range strings.Split(cluster.GetAccessDetails(),"\n") {
+        fmt.Println("    " + s)
+      }
+    }
+  } else {
+    fmt.Println("<none>")
+  }
 }

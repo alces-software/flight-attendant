@@ -126,6 +126,52 @@ func IsValidKeyPairName(name string) bool {
   return true
 }
 
+func CleanFlightEventHandling(stacks []string, dryrun bool, messageHandler func(string)) error {
+  snsSvc, err := SNS()
+  if err != nil { return err }
+  sqsSvc, err := SQS()
+  if err != nil { return err }
+
+  topicsResp, err := snsSvc.ListTopics(&sns.ListTopicsInput{})
+  if err != nil { return err }
+  for _, topic := range topicsResp.Topics {
+    topicName := strings.Split(*topic.TopicArn,":")[5]
+    if strings.HasPrefix(topicName, "flight-") {
+      if ! containsS(stacks, topicName) {
+        messageHandler("🗑  Remove topic: " + topicName)
+
+        subResp, err := snsSvc.ListSubscriptionsByTopic(&sns.ListSubscriptionsByTopicInput{TopicArn: topic.TopicArn})
+        if err != nil { return err }
+        if !dryrun {
+          for _, sub := range subResp.Subscriptions {
+            snsSvc.Unsubscribe(&sns.UnsubscribeInput{SubscriptionArn: sub.SubscriptionArn})
+          }
+          snsSvc.DeleteTopic(&sns.DeleteTopicInput{TopicArn: topic.TopicArn})
+        }
+      } else {
+        messageHandler("✅  Retain topic: " + topicName)
+      }
+    }
+  }
+
+  queueResp, err := sqsSvc.ListQueues(&sqs.ListQueuesInput{})
+  if err != nil { return err }
+  for _, queue := range queueResp.QueueUrls {
+    queueName := strings.Split(*queue,"/")[4]
+    if strings.HasPrefix(queueName, "flight-") {
+      if ! containsS(stacks, queueName) {
+        messageHandler("🗑  Remove queue: " + queueName)
+        if !dryrun {
+          _, err = sqsSvc.DeleteQueue(&sqs.DeleteQueueInput{QueueUrl: queue})
+        }
+      } else {
+        messageHandler("✅  Retain queue: " + queueName)
+      }
+    }
+  }
+  return nil
+}
+
 func createStack(
   svc *cloudformation.CloudFormation,
   params []*cloudformation.Parameter,
@@ -193,6 +239,15 @@ func destroyStack(svc *cloudformation.CloudFormation, stackName string) error {
   return nil
 }
 
+func getStack(svc *cloudformation.CloudFormation, stackName string) (*cloudformation.Stack, error) {
+  stackParams := &cloudformation.DescribeStacksInput{StackName: aws.String(stackName)}
+
+  stacksResp, err := svc.DescribeStacks(stackParams)
+  if err != nil { return nil, err }
+
+  return stacksResp.Stacks[0], nil
+}
+
 func getStackParameter(stack *cloudformation.Stack, key string) string {
   var v string
   for _, param := range stack.Parameters {
@@ -224,6 +279,18 @@ func getStackOutput(stack *cloudformation.Stack, key string) string {
     }
   }
   return v
+}
+
+func getComponentStacksForCluster(cluster *Cluster) ([]*cloudformation.Stack, error) {
+  var componentStacks = []*cloudformation.Stack{}
+  err := eachRunningStack(func(stack *cloudformation.Stack) {
+    if getStackTag(stack, "flight:type") == "component" &&
+      getStackTag(stack, "flight:cluster") == cluster.Name &&
+      getStackTag(stack, "flight:domain") == cluster.Domain.Name {
+      componentStacks = append(componentStacks, stack)
+    }
+  })
+  return componentStacks, err
 }
 
 func eachRunningStack(fn func(stack *cloudformation.Stack)) error {
