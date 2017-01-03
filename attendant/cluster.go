@@ -141,10 +141,6 @@ func (m *Master) AccessIP() string {
   return getStackOutput(m.Stack, "AccessIP")
 }
 
-func (m *Master) PrimaryNetworkInterface() string {
-  return getStackOutput(m.Stack, "FlightLoginPrimaryNetworkInterface")
-}
-
 func (m *Master) PrivateIP() string {
   return getStackOutput(m.Stack, "FlightLoginPrivateIP")
 }
@@ -622,8 +618,6 @@ func createComponentLaunchParameters(cluster *Cluster, paramsFile string) []*clo
       val = cluster.Network.PrivateSubnet()
     case "%PLACEMENT_GROUP%":
       val = cluster.Network.PlacementGroup()
-    case "%MASTER_NIC%":
-      val = cluster.Master.PrimaryNetworkInterface()
     case "%MASTER_IP%":
       val = cluster.Master.PrivateIP()
     case "%PRIVATE_ROUTE_TABLE%":
