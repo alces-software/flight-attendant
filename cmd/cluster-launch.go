@@ -101,8 +101,8 @@ var clusterLaunchCmd = &cobra.Command{
       return
     }
     fmt.Println("\nCluster launched.\n")
-    fmt.Println("== Access details ==")
-    fmt.Println(cluster.GetAccessDetails() + "\n")
+    fmt.Println("== Cluster details ==")
+    fmt.Println(cluster.GetDetails() + "\n")
     fmt.Println("\nAccess via:\n\n\tssh " + cluster.Master.Username() + "@" + cluster.Master.AccessIP())
 	},
 }

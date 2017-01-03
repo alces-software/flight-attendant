@@ -143,7 +143,7 @@ func (a Appliance) Destroy() error {
   return err
 }
 
-func (a Appliance) GetAccessDetails() string {
+func (a Appliance) GetDetails() string {
   var details string
   switch a.Name {
   case "directory":

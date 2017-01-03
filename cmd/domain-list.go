@@ -48,9 +48,9 @@ var domainListCmd = &cobra.Command{
     regions := getRegions(cmd)
     for _, region := range regions {
       attendant.Config().AwsRegion = region
-      attendant.Spin(func() {
+      attendant.SpinWithSuffix(func() {
         domains, err = attendant.AllDomains()
-      })
+      }, region)
       if err != nil {
         fmt.Println(err.Error())
         return

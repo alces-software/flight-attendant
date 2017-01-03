@@ -32,6 +32,7 @@ import (
   "fmt"
   "io/ioutil"
   "strconv"
+  "strings"
   "time"
 
 	"github.com/spf13/viper"
@@ -303,13 +304,23 @@ func (c *Cluster) Destroy() error {
   return nil
 }
 
-func (c Cluster) GetAccessDetails() string {
+func (c *Cluster) GetDetails() string {
   if c.Master != nil {
     ip := getStackOutput(c.Master.Stack, "AccessIP")
     keypair := getStackParameter(c.Master.Stack, "AccessKeyName")
     username := getStackOutput(c.Master.Stack, "Username")
     url := getStackOutput(c.Master.Stack, "WebAccess")
-    return fmt.Sprintf("IP address: %s\nKey pair: %s\nAdministrator username: %s\nAccess URL: %s\n", ip, keypair, username, url)
+    componentStacks, _ := getComponentStacksForCluster(c)
+    details := fmt.Sprintf("IP address: %s\nKey pair: %s\nAdministrator username: %s\nAccess URL: %s\n", ip, keypair, username, url)
+    if (len(componentStacks) > 0) {
+      details += "\nComponents: "
+      stackNames := []string{}
+      for _, stack := range componentStacks {
+        stackNames = append(stackNames, *stack.StackName)
+      }
+      details += strings.Join(stackNames, ", ") + "\n"
+    }
+    return details
   } else {
     return "(Incomplete)"
   }

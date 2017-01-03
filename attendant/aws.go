@@ -281,6 +281,16 @@ func getStackOutput(stack *cloudformation.Stack, key string) string {
   return v
 }
 
+func OtherStacks() ([]*cloudformation.Stack, error) {
+  var otherStacks = []*cloudformation.Stack{}
+  err := eachRunningStackAll(func(stack *cloudformation.Stack) {
+    if getStackTag(stack, "flight:type") == "" {
+      otherStacks = append(otherStacks, stack)
+    }
+  })
+  return otherStacks, err
+}
+
 func getComponentStacksForCluster(cluster *Cluster) ([]*cloudformation.Stack, error) {
   var componentStacks = []*cloudformation.Stack{}
   err := eachRunningStack(func(stack *cloudformation.Stack) {
@@ -291,6 +301,39 @@ func getComponentStacksForCluster(cluster *Cluster) ([]*cloudformation.Stack, er
     }
   })
   return componentStacks, err
+}
+
+func eachRunningStackAll(fn func(stack *cloudformation.Stack)) error {
+	svc, err := CloudFormation()
+  if err != nil { return err }
+
+	listParams := &cloudformation.ListStacksInput{
+		StackStatusFilter: []*string{
+			aws.String("CREATE_COMPLETE"),
+			aws.String("CREATE_IN_PROGRESS"),
+		},
+	}
+
+	resp, err := svc.ListStacks(listParams)
+  if err != nil { return err }
+
+	for _, value := range resp.StackSummaries {
+    var stacksResp *cloudformation.DescribeStacksOutput
+    getter := func() {
+      stacksResp, err = svc.DescribeStacks(&cloudformation.DescribeStacksInput{
+        StackName: value.StackName,
+      })
+    }
+    getter()
+    if err != nil && strings.HasPrefix(err.Error(), "Throttling: Rate exceeded") {
+      getter()
+    } else if err != nil {
+      return err
+    }
+    fn(stacksResp.Stacks[0])
+  }
+
+  return err
 }
 
 func eachRunningStack(fn func(stack *cloudformation.Stack)) error {

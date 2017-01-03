@@ -58,7 +58,7 @@ var domainStatusCmd = &cobra.Command{
         var err error
         var domains []attendant.Domain
         attendant.Config().AwsRegion = region
-        attendant.Spin(func() { domains, err = attendant.AllDomains() })
+        attendant.SpinWithSuffix(func() { domains, err = attendant.AllDomains() }, region)
         if err != nil {
           fmt.Println(err.Error())
           return
@@ -85,7 +85,7 @@ func statusFor(domain *attendant.Domain) {
   var err error
   var status *attendant.DomainStatus
 
-  attendant.Spin(func() { status, err = domain.Status() })
+  attendant.SpinWithSuffix(func() { status, err = domain.Status() }, attendant.Config().AwsRegion + ": " + domain.Name)
   if err != nil {
     fmt.Println(err.Error())
     return
@@ -98,7 +98,7 @@ func statusFor(domain *attendant.Domain) {
     for _, appliance := range status.Appliances {
       fmt.Println("    " + appliance.Name)
       fmt.Println("    " + strings.Repeat("-", len(appliance.Name)))
-      for _, s := range strings.Split(appliance.GetAccessDetails(),"\n") {
+      for _, s := range strings.Split(appliance.GetDetails(),"\n") {
         fmt.Println("    " + s)
       }
     }
@@ -111,7 +111,7 @@ func statusFor(domain *attendant.Domain) {
     for _, cluster := range status.Clusters {
       fmt.Println("    " + cluster.Name)
       fmt.Println("    " + strings.Repeat("-", len(cluster.Name)))
-      for _, s := range strings.Split(cluster.GetAccessDetails(),"\n") {
+      for _, s := range strings.Split(cluster.GetDetails(),"\n") {
         fmt.Println("    " + s)
       }
     }

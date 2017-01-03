@@ -44,53 +44,58 @@ var cleanupCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
     var domains []attendant.Domain
     var err error
-    attendant.Spin(func() {
-      domains, err = attendant.AllDomains()
-    })
-    if err != nil {
-      fmt.Println(err.Error())
-      return
-    }
-    var stacks = []string{}
-    for _, domain := range domains {
-      fmt.Println("Collating resources for Flight Compute Enterprise domain: " + domain.Name)
-      var status *attendant.DomainStatus
-      attendant.Spin(func() { status, err = domain.Status() })
+    regions := getRegions(cmd)
+    for _, region := range regions {
+      attendant.Config().AwsRegion = region
+      attendant.SpinWithSuffix(func() {
+        domains, err = attendant.AllDomains()
+      }, region)
       if err != nil {
         fmt.Println(err.Error())
         return
       }
-      stacks = append(stacks, "flight-" + domain.Name)
-      // list all topics, subscriptions, queues and remove any that aren't accounted for
-      for _, cluster := range status.Clusters {
-        stacks = append(stacks, "flight-" + domain.Name + "-cluster-" + cluster.Name)
+      var stacks = []string{}
+      for _, domain := range domains {
+        var status *attendant.DomainStatus
+        attendant.SpinWithSuffix(func() { status, err = domain.Status() }, region + ": " + domain.Name)
+        if err != nil {
+          fmt.Println(err.Error())
+          return
+        }
+        stacks = append(stacks, "flight-" + domain.Name)
+        // list all topics, subscriptions, queues and remove any that aren't accounted for
+        for _, cluster := range status.Clusters {
+          stacks = append(stacks, "flight-" + domain.Name + "-cluster-" + cluster.Name)
+        }
+        for _, appliance := range status.Appliances {
+          stacks = append(stacks, "flight-" + domain.Name + "-" + appliance.Name)
+        }
       }
-      for _, appliance := range status.Appliances {
-        stacks = append(stacks, "flight-" + domain.Name + "-" + appliance.Name)
+      var soloStatus *attendant.DomainStatus
+      attendant.SpinWithSuffix(func() { soloStatus, err = attendant.SoloStatus() }, region + " (Solo)")
+      if err != nil {
+        fmt.Println(err.Error())
+        return
       }
-    }
-    fmt.Println("Collating resources for Flight Compute Solo clusters")
-    var soloStatus *attendant.DomainStatus
-    attendant.Spin(func() { soloStatus, err = attendant.SoloStatus() })
-    if err != nil {
-      fmt.Println(err.Error())
-      return
-    }
-    for _, cluster := range soloStatus.Clusters {
-      stacks = append(stacks, "flight-cluster-" + cluster.Name)
-    }
+      for _, cluster := range soloStatus.Clusters {
+        stacks = append(stacks, "flight-cluster-" + cluster.Name)
+      }
 
-    fmt.Println("\nActive resources: " + strings.Join(stacks,", ") + "\n")
-    handler := func(msg string) {
-      attendant.Spinner().Stop()
-      fmt.Println(msg)
-      attendant.Spinner().Start()
-    }
-    dryrun, _ := cmd.Flags().GetBool("dry-run")
-    attendant.Spin(func() { err = attendant.CleanFlightEventHandling(stacks, dryrun, handler) })
-    if err != nil {
-      fmt.Println(err.Error())
-      return
+      if ( len(stacks) > 0 ) {
+        fmt.Println("Active resources (" + region + "): " + strings.Join(stacks,", ") + "\n")
+        handler := func(msg string) {
+          attendant.Spinner().Stop()
+          fmt.Println(msg)
+          attendant.Spinner().Start()
+        }
+        dryrun, _ := cmd.Flags().GetBool("dry-run")
+        attendant.SpinWithSuffix(func() { err = attendant.CleanFlightEventHandling(stacks, dryrun, handler) }, region)
+        if err != nil {
+          fmt.Println(err.Error())
+          return
+        }
+        fmt.Println("")
+      }
     }
   },
 }
@@ -98,4 +103,5 @@ var cleanupCmd = &cobra.Command{
 func init() {
 	RootCmd.AddCommand(cleanupCmd)
   cleanupCmd.Flags().Bool("dry-run", false, "Perform a dry run displaying what resources would be cleaned")
+  cleanupCmd.Flags().String("regions", "", "Select regions to query")
 }

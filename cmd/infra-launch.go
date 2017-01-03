@@ -79,8 +79,8 @@ var infraLaunchCmd = &cobra.Command{
         appliance, err = launchAppliance(domain, applianceName)
         if err != nil { break }
         fmt.Println("\nAppliance launched.\n")
-        fmt.Println("== Access details ==")
-        fmt.Println(appliance.GetAccessDetails() + "\n")
+        fmt.Println("== Appliance details ==")
+        fmt.Println(appliance.GetDetails() + "\n")
       }
     } else {
       var appliance *attendant.Appliance
@@ -88,8 +88,8 @@ var infraLaunchCmd = &cobra.Command{
       appliance, err = launchAppliance(domain, args[0])
       if err == nil {
         fmt.Println("\nAppliance launched.\n")
-        fmt.Println("== Access details ==")
-        fmt.Println(appliance.GetAccessDetails() + "\n")
+        fmt.Println("== Appliance details ==")
+        fmt.Println(appliance.GetDetails() + "\n")
       }
     }
 		if err != nil {

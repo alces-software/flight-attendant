@@ -123,7 +123,7 @@ func (d *Domain) Status() (*DomainStatus, error) {
           clusterName := getStackTag(stack, "flight:cluster")
           cluster, exists := runningInfra.Clusters[clusterName]
           if ! exists {
-            cluster = &Cluster{Name: clusterName}
+            cluster = &Cluster{Name: clusterName, Domain: d}
             runningInfra.Clusters[clusterName] = cluster
           }
           if stackType == "master" {

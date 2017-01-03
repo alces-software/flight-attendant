@@ -52,6 +52,12 @@ func Spin(fn func()) {
   attSpinner.Stop()
 }
 
+func SpinWithSuffix(fn func(), suffix string) {
+  attSpinner.Suffix = " " + suffix
+  Spin(fn)
+  attSpinner.Suffix = ""
+}
+
 func CreateCreateHandler(resourceTotal int) (func(msg string), error) {
   return createHandlerFunction(resourceTotal, "CREATE_IN_PROGRESS", "CREATE_COMPLETE", "✅")
 }
