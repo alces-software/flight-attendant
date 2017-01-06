@@ -54,6 +54,10 @@ var ConfigDefaults = map[string]string {
   "directory-features": "",
   "directory-instance-type": "",
 
+  "monitor-profiles": "",
+  "monitor-features": "",
+  "monitor-instance-type": "",
+
   "access-manager-profiles": "",
   "access-manager-features": "",
   "access-manager-instance-type": "",
