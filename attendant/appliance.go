@@ -154,14 +154,22 @@ func (a Appliance) GetDetails() string {
     ip := getStackOutput(a.Stack, "DirectoryAccessIP")
     keypair := getStackParameter(a.Stack, "AccessKeyName")
     url := getStackOutput(a.Stack, "DirectoryWebAccess")
-    password := strings.Split(strings.Split(getStackOutput(a.Stack, "ConfigurationResult"), "\"")[3]," ")[2]
-    details = fmt.Sprintf("IP address: %s\nKey pair: %s\nAccess URL: %s\nAdministrator password: %s\n", ip, keypair, url, password)
+    otherData := strings.Split(strings.Split(getStackOutput(a.Stack, "ConfigurationResult"), "\"")[3],";")
+    otherDetails := ""
+    for _, otherDatum := range otherData {
+      otherDetails += strings.TrimSpace(otherDatum) + "\n"
+    }
+    details = fmt.Sprintf("IP address: %s\nKey pair: %s\nAccess URL: %s\n%s", ip, keypair, url, otherDetails)
   case "monitor":
     ip := getStackOutput(a.Stack, "MonitorAccessIP")
     keypair := getStackParameter(a.Stack, "AccessKeyName")
     url := getStackOutput(a.Stack, "MonitorWebAccess")
-    password := getStackOutput(a.Stack, "ConfigurationResult") // strings.Split(strings.Split(getStackOutput(a.Stack, "ConfigurationResult"), "\"")[3]," ")[2]
-    details = fmt.Sprintf("IP address: %s\nKey pair: %s\nAccess URL: %s\nAdministrator password: %s\n", ip, keypair, url, password)
+    otherData := strings.Split(strings.Split(getStackOutput(a.Stack, "ConfigurationResult"), "\"")[3],";")
+    otherDetails := ""
+    for _, otherDatum := range otherData {
+      otherDetails += strings.TrimSpace(otherDatum) + "\n"
+    }
+    details = fmt.Sprintf("IP address: %s\nKey pair: %s\nAccess URL: %s\n%s", ip, keypair, url, otherDetails)
   case "storage-manager":
     url := getStackOutput(a.Stack, "StorageManagerWebAccess")
     details = fmt.Sprintf("Access URL: %s\n", url)
