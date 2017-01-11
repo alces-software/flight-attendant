@@ -28,7 +28,7 @@ if [ -z "$version" ]; then
 fi
 
 s3cmd put ${dry_run} -P pkg/darwin-amd64/fly s3://alces-flight/FlightAttendant/$version/darwin-x86_64/fly
-s3cmd put ${dry_run} -P pkg/linux-i386/fly s3://alces-flight/FlightAttendant/$version/linux-i386/fly
+s3cmd put ${dry_run} -P pkg/linux-386/fly s3://alces-flight/FlightAttendant/$version/linux-i386/fly
 s3cmd put ${dry_run} -P pkg/linux-amd64/fly s3://alces-flight/FlightAttendant/$version/linux-x86_64/fly
 sed -e "s/%SHA256SUM%/$sha256sum/g" -e "s/%VERSION%/$version/g" scripts/fly.rb.tpl > /tmp/fly.rb
 s3cmd put ${dry_run} -P /tmp/fly.rb s3://alces-flight/FlightAttendant/fly.rb
