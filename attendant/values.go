@@ -28,9 +28,9 @@
 
 package attendant
 
-var Version = "0.1.1-dev"
-var FlightRelease = "2016.4-dev"
-var ReleaseDate = "Unknown"
+var Version = "0.2.0"
+var FlightRelease = "2016.4r1"
+var ReleaseDate = "2017-01-11"
 
 var InstanceTypes []string = []string{
   "c3.large-2C-3.75GB",
@@ -115,4 +115,22 @@ var SchedulerTypes = []string {
   "pbspro",
   "slurm",
   "torque",
+}
+
+var AwsRegions = []string {
+  "ap-northeast-1",
+  "ap-northeast-2",
+  "ap-south-1",
+  "ap-southeast-1",
+  "ap-southeast-2",
+  "ca-central-1",
+  "eu-west-1",
+  "eu-west-2",
+  "eu-central-1",
+  "sa-east-1",
+  "sa-east-1",
+  "us-east-1",
+  "us-east-2",
+  "us-west-1",
+  "us-west-2",
 }

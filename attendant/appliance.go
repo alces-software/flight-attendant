@@ -50,12 +50,14 @@ var ApplianceTemplates = map[string]string{
   "directory": "directory.json",
   "storage-manager": "storage-manager.json",
   "access-manager": "access-manager.json",
+  "monitor": "monitor.json",
 }
 
 var ApplianceResourceCounts = map[string]int {
   "directory": 11,
   "storage-manager": 9,
   "access-manager": 9,
+  "monitor": 11,
 }
 
 var ApplianceInstanceTypes = []string{
@@ -91,7 +93,9 @@ func (a *Appliance) Create() error {
   var launchParams []*cloudformation.Parameter
   switch a.Name {
   case "directory":
-    launchParams = createDirectoryLaunchParameters(a.Domain)
+    launchParams = createDomainApplianceLaunchParameters(a.Domain, "directory")
+  case "monitor":
+    launchParams = createDomainApplianceLaunchParameters(a.Domain, "monitor")
   case "access-manager", "storage-manager":
     launchParams = createApplianceLaunchParameters(a)
   default:
@@ -143,15 +147,29 @@ func (a Appliance) Destroy() error {
   return err
 }
 
-func (a Appliance) GetAccessDetails() string {
+func (a Appliance) GetDetails() string {
   var details string
   switch a.Name {
   case "directory":
     ip := getStackOutput(a.Stack, "DirectoryAccessIP")
     keypair := getStackParameter(a.Stack, "AccessKeyName")
     url := getStackOutput(a.Stack, "DirectoryWebAccess")
-    password := strings.Split(strings.Split(getStackOutput(a.Stack, "ConfigurationResult"), "\"")[3]," ")[2]
-    details = fmt.Sprintf("IP address: %s\nKey pair: %s\nAccess URL: %s\nAdministrator password: %s\n", ip, keypair, url, password)
+    otherData := strings.Split(strings.Split(getStackOutput(a.Stack, "ConfigurationResult"), "\"")[3],";")
+    otherDetails := ""
+    for _, otherDatum := range otherData {
+      otherDetails += strings.TrimSpace(otherDatum) + "\n"
+    }
+    details = fmt.Sprintf("IP address: %s\nKey pair: %s\nAccess URL: %s\n%s", ip, keypair, url, otherDetails)
+  case "monitor":
+    ip := getStackOutput(a.Stack, "MonitorAccessIP")
+    keypair := getStackParameter(a.Stack, "AccessKeyName")
+    url := getStackOutput(a.Stack, "MonitorWebAccess")
+    otherData := strings.Split(strings.Split(getStackOutput(a.Stack, "ConfigurationResult"), "\"")[3],";")
+    otherDetails := ""
+    for _, otherDatum := range otherData {
+      otherDetails += strings.TrimSpace(otherDatum) + "\n"
+    }
+    details = fmt.Sprintf("IP address: %s\nKey pair: %s\nAccess URL: %s\n%s", ip, keypair, url, otherDetails)
   case "storage-manager":
     url := getStackOutput(a.Stack, "StorageManagerWebAccess")
     details = fmt.Sprintf("Access URL: %s\n", url)
@@ -162,8 +180,8 @@ func (a Appliance) GetAccessDetails() string {
   return details
 }
 
-func createDirectoryLaunchParameters(domain *Domain) []*cloudformation.Parameter {
-  instanceType := viper.GetString("directory-instance-type")
+func createDomainApplianceLaunchParameters(domain *Domain, applianceType string) []*cloudformation.Parameter {
+  instanceType := viper.GetString(applianceType + "-instance-type")
   if instanceType == "" { instanceType = viper.GetString("appliance-instance-type") }
   if instanceType == "" { instanceType = ApplianceInstanceTypes[0] }
 
@@ -182,7 +200,7 @@ func createDirectoryLaunchParameters(domain *Domain) []*cloudformation.Parameter
     },
     {
       ParameterKey: aws.String("FlightProfiles"),
-      ParameterValue: aws.String(viper.GetString("directory-profiles")),
+      ParameterValue: aws.String(viper.GetString(applianceType + "-profiles")),
     },
     {
       ParameterKey: aws.String("ApplianceInstanceType"),

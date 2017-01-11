@@ -45,29 +45,34 @@ var domainListCmd = &cobra.Command{
     var domains []attendant.Domain
     var err error
 
-    attendant.Spin(func() {
-      domains, err = attendant.AllDomains()
-    })
-		if err != nil {
-			fmt.Println(err.Error())
-			return
-		}
-
-    fmt.Printf("== Domains (%s) ==\n", attendant.Config().AwsRegion)
-    if len(domains) > 0 {
-      for _, domain := range domains {
-        if *domain.Stack.StackStatus == "CREATE_IN_PROGRESS" {
-          fmt.Println(domain.Name + " (not ready)")
-        } else {
-          fmt.Println(domain.Name)
-        }
+    regions := getRegions(cmd)
+    for _, region := range regions {
+      attendant.Config().AwsRegion = region
+      attendant.SpinWithSuffix(func() {
+        domains, err = attendant.AllDomains()
+      }, region)
+      if err != nil {
+        fmt.Println(err.Error())
+        return
       }
-    } else {
-      fmt.Println("<none>")
+      fmt.Printf("== Domains (%s) ==\n", attendant.Config().AwsRegion)
+      if len(domains) > 0 {
+        for _, domain := range domains {
+          if *domain.Stack.StackStatus == "CREATE_IN_PROGRESS" {
+            fmt.Println(domain.Name + " (not ready)")
+          } else {
+            fmt.Println(domain.Name)
+          }
+        }
+      } else {
+        fmt.Println("<none>")
+      }
+      fmt.Println("")
     }
 	},
 }
 
 func init() {
 	domainCmd.AddCommand(domainListCmd)
+  domainListCmd.Flags().String("regions", "", "Select regions to query")
 }
