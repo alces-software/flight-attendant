@@ -30,13 +30,17 @@ package attendant
 
 import (
   "fmt"
+  "io/ioutil"
   "strconv"
+  "strings"
   "time"
 
 	"github.com/spf13/viper"
 
   "github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/cloudformation"
+
+  "gopkg.in/yaml.v2"
 )
 
 var clusterNetworkTemplate = "cluster-network.json"
@@ -138,10 +142,6 @@ func (m *Master) AccessIP() string {
   return getStackOutput(m.Stack, "AccessIP")
 }
 
-func (m *Master) PrimaryNetworkInterface() string {
-  return getStackOutput(m.Stack, "FlightLoginPrimaryNetworkInterface")
-}
-
 func (m *Master) PrivateIP() string {
   return getStackOutput(m.Stack, "FlightLoginPrivateIP")
 }
@@ -211,6 +211,48 @@ func (c *Cluster) Create() error {
   return nil
 }
 
+func (c *Cluster) Expand(componentType, componentName, componentParamsFile string) error {
+	svc, err := CloudFormation()
+  if err != nil { return err }
+
+  // Load some cluster information, specifically Network
+  networkStack, err := getStack(svc, "flight-" + c.Domain.Name + "-" + c.Name + "-network")
+  if err != nil { return err }
+  idx, err := strconv.Atoi(getStackTag(networkStack, "flight:network"))
+  if err != nil { return err }
+  c.Network = &ClusterNetwork{idx, networkStack}
+  masterStack, err := getStack(svc, "flight-" + c.Domain.Name + "-" + c.Name + "-master")
+  if err != nil { return err }
+  c.Master = &Master{masterStack}
+  
+  tArn, qUrl, err := setupEventHandling("flight-" + c.Domain.Name + "-cluster-" + c.Name)
+  if err != nil { return err }
+  go c.processQueue(qUrl)
+  c.TopicARN = *tArn
+
+  err = createComponent(componentType, componentName, componentParamsFile, c, svc)
+  if err != nil { return err }
+
+  c.MessageHandler("DONE")
+  return nil
+}
+
+func (c *Cluster) Reduce(componentType, componentName string) error {
+	svc, err := CloudFormation()
+  if err != nil { return err }
+
+  tArn, qUrl, err := setupEventHandling("flight-" + c.Domain.Name + "-cluster-" + c.Name)
+  if err != nil { return err }
+  go c.processQueue(qUrl)
+  c.TopicARN = *tArn
+
+  err = destroyComponent(c, componentType, componentName, svc)
+  if err != nil { return err }
+
+  c.MessageHandler("DONE")
+  return nil
+}
+
 func (c *Cluster) Destroy() error {
 	svc, err := CloudFormation()
   if err != nil { return err }
@@ -231,6 +273,15 @@ func (c *Cluster) Destroy() error {
     if err != nil { return err }
     go c.processQueue(qUrl)
 
+    // get any components and destroy them first
+    componentStacks, err := getComponentStacksForCluster(c)
+    if err != nil { return err }
+    c.MessageHandler("DISABLE-COUNTERS")
+    for _, stack := range componentStacks {
+      err = destroyStack(svc, *stack.StackName)
+      if err != nil { return err }
+    }
+    c.MessageHandler("ENABLE-COUNTERS")
     err = destroyComputeGroup(c, 1, svc)
     if err != nil { return err }
     err = destroyMaster(c, svc)
@@ -253,12 +304,26 @@ func (c *Cluster) Destroy() error {
   return nil
 }
 
-func (c Cluster) GetAccessDetails() string {
-  ip := getStackOutput(c.Master.Stack, "AccessIP")
-  keypair := getStackParameter(c.Master.Stack, "AccessKeyName")
-  username := getStackOutput(c.Master.Stack, "Username")
-  url := getStackOutput(c.Master.Stack, "WebAccess")
-  return fmt.Sprintf("IP address: %s\nKey pair: %s\nAdministrator username: %s\nAccess URL: %s\n", ip, keypair, username, url)
+func (c *Cluster) GetDetails() string {
+  if c.Master != nil {
+    ip := getStackOutput(c.Master.Stack, "AccessIP")
+    keypair := getStackParameter(c.Master.Stack, "AccessKeyName")
+    username := getStackOutput(c.Master.Stack, "Username")
+    url := getStackOutput(c.Master.Stack, "WebAccess")
+    componentStacks, _ := getComponentStacksForCluster(c)
+    details := fmt.Sprintf("IP address: %s\nKey pair: %s\nAdministrator username: %s\nAccess URL: %s\n", ip, keypair, username, url)
+    if (len(componentStacks) > 0) {
+      details += "\nComponents: "
+      stackNames := []string{}
+      for _, stack := range componentStacks {
+        stackNames = append(stackNames, *stack.StackName)
+      }
+      details += strings.Join(stackNames, ", ") + "\n"
+    }
+    return details
+  } else {
+    return "(Incomplete)"
+  }
 }
 
 func destroyComputeGroup(cluster *Cluster, index int, svc *cloudformation.CloudFormation) error {
@@ -285,12 +350,21 @@ func destroySoloCluster(cluster *Cluster, svc *cloudformation.CloudFormation) er
   return destroyStack(svc, stackName)
 }
 
-func createMaster(cluster *Cluster, svc *cloudformation.CloudFormation) error {
-  launchParams, err := createMasterLaunchParameters(cluster)
-  if err != nil { return err }
+func destroyComponent(cluster *Cluster, componentType, componentName string, svc *cloudformation.CloudFormation) error {
+  if componentName == "" {
+    componentName = componentType
+  } else {
+    componentName = componentType + "-" + componentName
+  }
+  stackName := fmt.Sprintf("flight-%s-%s-component-%s", cluster.Domain.Name, cluster.Name, componentName)
+  return destroyStack(svc, stackName)
+}
 
+func createMaster(cluster *Cluster, svc *cloudformation.CloudFormation) error {
+  launchParams := createMasterLaunchParameters(cluster)
   stackName := fmt.Sprintf("flight-%s-%s-master", cluster.Domain.Name, cluster.Name)
   url := TemplateUrl(clusterMasterTemplate)
+
   stack, err := createStack(svc, launchParams, cluster.Tags(), url, stackName, "master", cluster.TopicARN, cluster.Domain)
   if err != nil { return err }
 
@@ -298,16 +372,30 @@ func createMaster(cluster *Cluster, svc *cloudformation.CloudFormation) error {
   return nil
 }
 
-func createComputeGroup(cluster *Cluster, svc *cloudformation.CloudFormation) error {
-  launchParams, err := createComputeLaunchParameters(cluster)
+func createComponent(componentType, componentName, componentParamsFile string, cluster *Cluster, svc *cloudformation.CloudFormation) error {
+  launchParams := createComponentLaunchParameters(cluster, componentParamsFile)
+  if componentName == "" {
+    componentName = componentType
+  } else {
+    componentName = componentType + "-" + componentName
+  }
+  stackName := fmt.Sprintf("flight-%s-%s-component-%s", cluster.Domain.Name, cluster.Name, componentName)
+  url := TemplateUrl(componentType + ".json")
+
+  _, err := createStack(svc, launchParams, cluster.Tags(), url, stackName, "component", cluster.TopicARN, cluster.Domain)
   if err != nil { return err }
 
+  return nil
+}
+
+func createComputeGroup(cluster *Cluster, svc *cloudformation.CloudFormation) error {
+  launchParams := createComputeLaunchParameters(cluster)
   stackName := fmt.Sprintf("flight-%s-%s-compute-%d",
     cluster.Domain.Name,
     cluster.Name,
     len(cluster.ComputeGroups) + 1)
-
   url := TemplateUrl(clusterComputeTemplate)
+
   stack, err := createStack(svc, launchParams, cluster.Tags(), url, stackName, "compute", cluster.TopicARN, cluster.Domain)
   if err != nil { return err }
 
@@ -319,13 +407,11 @@ func createClusterNetwork(cluster *Cluster, svc *cloudformation.CloudFormation) 
   network, err := cluster.Domain.BookNetwork()
   if err != nil { return err }
 
-  launchParams, err := createNetworkLaunchParameters(cluster, network)
-  if err != nil { return err }
-
+  launchParams := createNetworkLaunchParameters(cluster, network)
   stackName := fmt.Sprintf("flight-%s-%s-network", cluster.Domain.Name, cluster.Name)
-
   url := TemplateUrl(clusterNetworkTemplate)
   tags := append(cluster.Tags(), &cloudformation.Tag{Key: aws.String("flight:network"), Value: aws.String(strconv.Itoa(network))})
+
   stack, err := createStack(svc, launchParams, tags, url, stackName, "network", cluster.TopicARN, cluster.Domain)
   if err != nil { return err }
 
@@ -337,12 +423,10 @@ func createClusterNetwork(cluster *Cluster, svc *cloudformation.CloudFormation) 
 }
 
 func createSoloCluster(cluster *Cluster, svc *cloudformation.CloudFormation) error {
-  launchParams, err := createSoloLaunchParameters(cluster)
-  if err != nil { return err }
-
+  launchParams := createSoloLaunchParameters(cluster)
   stackName := fmt.Sprintf("flight-cluster-%s", cluster.Name)
-
   url := TemplateUrl(soloClusterTemplate)
+
   stack, err := createStack(svc, launchParams, cluster.Tags(), url, stackName, "solo", cluster.TopicARN, nil)
   if err != nil { return err }
 
@@ -350,7 +434,7 @@ func createSoloCluster(cluster *Cluster, svc *cloudformation.CloudFormation) err
   return nil
 }
 
-func createNetworkLaunchParameters(cluster *Cluster, network int) ([]*cloudformation.Parameter, error) {
+func createNetworkLaunchParameters(cluster *Cluster, network int) []*cloudformation.Parameter {
   networkPool := (network / 32) + 1
   networkIndex := (network % 32) + 1
 
@@ -372,10 +456,10 @@ func createNetworkLaunchParameters(cluster *Cluster, network int) ([]*cloudforma
       ParameterValue: aws.String(cluster.Domain.PublicRouteTable()),
     },
   }
-  return params, nil
+  return params
 }
 
-func createMasterLaunchParameters(cluster *Cluster) ([]*cloudformation.Parameter, error) {
+func createMasterLaunchParameters(cluster *Cluster) []*cloudformation.Parameter {
   masterFeatures := viper.GetString("master-features")
   if masterFeatures != "" {
     masterFeatures = masterFeatures + " password-auth"
@@ -426,6 +510,10 @@ func createMasterLaunchParameters(cluster *Cluster) ([]*cloudformation.Parameter
     {
       ParameterKey: aws.String("FlightPlacementGroup"),
       ParameterValue: aws.String(cluster.Network.PlacementGroup()),
+    },
+    {
+      ParameterKey: aws.String("FlightPrivateRouteTable"),
+      ParameterValue: aws.String(cluster.Network.PrivateRouteTable()),
     },
     {
       ParameterKey: aws.String("FlightFeatures"),
@@ -498,11 +586,65 @@ func createMasterLaunchParameters(cluster *Cluster) ([]*cloudformation.Parameter
       ParameterValue: aws.String(viper.GetString("master-instance-type")),
     })
   }
-  return params, nil
+  return params
 }
 
+func loadComponentParameters(paramsFile string) map[string]string {
+  params := make(map[string]string)
+  if paramsFile != "" {
+    data, err := ioutil.ReadFile(paramsFile)
+    if err != nil { fmt.Println(err.Error()) }
+    err = yaml.Unmarshal(data, &params)
+    if err != nil { fmt.Println(err.Error()) }
+  }
+  return params
+}
 
-func createComputeLaunchParameters(cluster *Cluster) ([]*cloudformation.Parameter, error) {
+func createComponentLaunchParameters(cluster *Cluster, paramsFile string) []*cloudformation.Parameter {
+  params := []*cloudformation.Parameter{}
+  for key, value := range loadComponentParameters(paramsFile) {
+    var val string
+    switch value  {
+    case "%ACCESS_KEY_NAME%":
+      val = Config().AccessKeyName
+    case "%ACCESS_NETWORK%":
+      val = viper.GetString("access-network")
+    case "%ACCESS_USERNAME%":
+      val = viper.GetString("admin-user-name")
+    case "%CLUSTER_NAME%":
+      val = cluster.Name
+    case "%VPC%":
+      val = cluster.Domain.VPC()
+    case "%DOMAIN%":
+      val = cluster.Domain.Prefix()
+    case "%NETWORK_POOL%":
+      val = cluster.Network.NetworkPool()
+    case "%NETWORK_INDEX%":
+      val = cluster.Network.NetworkIndex()
+    case "%PUBLIC_SUBNET%":
+      val = cluster.Network.PublicSubnet()
+    case "%MANAGEMENT_SUBNET%":
+      val = cluster.Network.ManagementSubnet()
+    case "%PRIVATE_SUBNET%":
+      val = cluster.Network.PrivateSubnet()
+    case "%PLACEMENT_GROUP%":
+      val = cluster.Network.PlacementGroup()
+    case "%MASTER_IP%":
+      val = cluster.Master.PrivateIP()
+    case "%PRIVATE_ROUTE_TABLE%":
+      val = cluster.Network.PrivateRouteTable()
+    default:
+      val = value
+    }
+    params = append(params, &cloudformation.Parameter{
+      ParameterKey: aws.String(key),
+      ParameterValue: aws.String(val),
+    })
+  }
+  return params
+}
+
+func createComputeLaunchParameters(cluster *Cluster) []*cloudformation.Parameter {
   params := []*cloudformation.Parameter{
     {
       ParameterKey: aws.String("AccessKeyName"),
@@ -515,10 +657,6 @@ func createComputeLaunchParameters(cluster *Cluster) ([]*cloudformation.Paramete
     {
       ParameterKey: aws.String("FlightVPC"),
       ParameterValue: aws.String(cluster.Domain.VPC()),
-    },
-    {
-      ParameterKey: aws.String("FlightLoginPrimaryNetworkInterface"),
-      ParameterValue: aws.String(cluster.Master.PrimaryNetworkInterface()),
     },
     {
       ParameterKey: aws.String("FlightDomain"),
@@ -576,10 +714,6 @@ func createComputeLaunchParameters(cluster *Cluster) ([]*cloudformation.Paramete
       ParameterKey: aws.String("FlightLoginPrivateIP"),
       ParameterValue: aws.String(cluster.Master.PrivateIP()),
     },
-    {
-      ParameterKey: aws.String("FlightPrivateRouteTable"),
-      ParameterValue: aws.String(cluster.Network.PrivateRouteTable()),
-    },
   }
   instanceType := viper.GetString("compute-instance-override")
   if instanceType != "" {
@@ -599,10 +733,10 @@ func createComputeLaunchParameters(cluster *Cluster) ([]*cloudformation.Paramete
       ParameterValue: aws.String(viper.GetString("compute-instance-type")),
     })
   }
-  return params, nil
+  return params
 }
 
-func createSoloLaunchParameters(cluster *Cluster) ([]*cloudformation.Parameter, error) {
+func createSoloLaunchParameters(cluster *Cluster) []*cloudformation.Parameter {
   masterFeatures := viper.GetString("master-features")
   params := []*cloudformation.Parameter{
     {
@@ -722,5 +856,5 @@ func createSoloLaunchParameters(cluster *Cluster) ([]*cloudformation.Parameter, 
       ParameterValue: aws.String(viper.GetString("compute-instance-type")),
     })
   }
-  return params, nil
+  return params
 }

@@ -212,3 +212,16 @@ func setupTemplateSource(cmdName string) error {
   }
   return nil
 }
+
+func getRegions(cmd *cobra.Command) []string {
+  var regions []string
+  regionSelector, _ := cmd.Flags().GetString("regions")
+  if regionSelector == "all" {
+    regions = attendant.AwsRegions
+  } else if regionSelector == "" {
+    regions = []string { attendant.Config().AwsRegion }
+  } else {
+    regions = strings.Split(regionSelector,",")
+  }
+  return regions
+}

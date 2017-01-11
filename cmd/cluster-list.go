@@ -33,7 +33,8 @@ import (
   "strings"
   
 	"github.com/spf13/cobra"
-
+	"github.com/aws/aws-sdk-go/service/cloudformation"
+  
 	"github.com/alces-software/flight-attendant/attendant"
 )
 
@@ -44,40 +45,83 @@ var clusterListCmd = &cobra.Command{
 	Long: `List running Flight Compute clusters.`,
 	Run: func(cmd *cobra.Command, args []string) {
     var status *attendant.DomainStatus
+    var domains []attendant.Domain
     var err error
 
-    solo, _ := cmd.Flags().GetBool("solo")
-    if solo {
-      attendant.Spin(func() { status, err = attendant.SoloStatus() })
-    } else {
-      domain, err := findDomain("clusterList", true)
-      if err != nil {
-        fmt.Println(err.Error())
-        return
-      }
-      attendant.Spin(func() { status, err = domain.Status() })
-    }
-
-		if err != nil {
-			fmt.Println(err.Error())
-			return
-		}
-
-    if solo {
-      fmt.Println("== Solo Clusters ==\n")
-    } else {
-      fmt.Println("== Clusters ==\n")
-    }
-    if len(status.Clusters) > 0 {
-      for _, cluster := range status.Clusters {
-        fmt.Println("    " + cluster.Name)
-        fmt.Println("    " + strings.Repeat("-", len(cluster.Name)))
-        for _, s := range strings.Split(cluster.GetAccessDetails(),"\n") {
-          fmt.Println("    " + s)
+    regions := getRegions(cmd)
+    for _, region := range regions {
+      attendant.Config().AwsRegion = region
+      solo, _ := cmd.Flags().GetBool("solo")
+      all, _ := cmd.Flags().GetBool("all")
+      if !solo || all {
+        if domain, err := findDomain("clusterList", false); err == nil {
+          domains = []attendant.Domain{*domain}
+        } else {
+          if err.Error() == "This operation requires you to specify a domain" {
+            attendant.SpinWithSuffix(func() {
+              domains, err = attendant.AllDomains()
+            }, region)
+          } else {
+            fmt.Println(err.Error())
+            return
+          }
+        }
+        if err != nil {
+          fmt.Println(err.Error())
+          return
+        }
+        for _, domain := range domains {
+          attendant.SpinWithSuffix(func() { status, err = domain.Status() }, region + ": " + domain.Name)
+          if err != nil {
+            fmt.Println(err.Error())
+            return
+          }
+          fmt.Printf("== Clusters in '%s' (%s) ==\n", domain.Name, attendant.Config().AwsRegion)
+          printClusters(status)
+          fmt.Println("")
         }
       }
-    } else {
-      fmt.Println("<none>")
+      if solo || all {
+        attendant.SpinWithSuffix(func() { status, err = attendant.SoloStatus() }, region + " (Solo)")
+        if err != nil {
+          fmt.Println(err.Error())
+          return
+        }
+        if len(status.Clusters) > 0 {
+          fmt.Printf("== Solo Clusters (%s) ==\n", attendant.Config().AwsRegion)
+          printClusters(status)
+          fmt.Println("")
+        }
+        if all {
+          var others []*cloudformation.Stack
+          attendant.SpinWithSuffix(func() { others, err = attendant.OtherStacks() }, region + " (Other resources)")
+          if err != nil {
+            fmt.Println(err.Error())
+            return
+          }
+          if len(others) > 0 {
+            fmt.Printf("== Other resources (%s) ==\n", attendant.Config().AwsRegion)
+            for _, stack := range others {
+              guessType := ""
+              for _, tag := range stack.Tags {
+                if *tag.Key == "alces:orchestrator" {
+                  guessType = " (Alces FlightDeck Resource)"
+                  break
+                }
+              }
+              if guessType == "" {
+                if strings.Contains(*stack.Description, "Alces Flight Compute") {
+                  guessType = " (Flight Compute from AWS Marketplace)"
+                } else {
+                  guessType = " (Unknown)"
+                }
+              }
+              fmt.Println("    " + *stack.StackName + guessType)
+            }
+            fmt.Println("")
+          }
+        }
+      }
     }
 	},
 }
@@ -86,4 +130,22 @@ func init() {
 	clusterCmd.AddCommand(clusterListCmd)
   addDomainFlag(clusterListCmd, "clusterList")
   clusterListCmd.Flags().BoolP("solo", "s", false, "List Flight Compute Solo clusters")
+  clusterListCmd.Flags().BoolP("all", "a", false, "List Flight Compute Enterprise and Solo clusters")
+  clusterListCmd.Flags().String("regions", "", "Select regions to query")
+}
+
+func printClusters(status *attendant.DomainStatus) {
+  if len(status.Clusters) > 0 {
+    for _, cluster := range status.Clusters {
+      fmt.Println("    " + cluster.Name)
+      fmt.Println("    " + strings.Repeat("-", len(cluster.Name)))
+      var details string
+      attendant.SpinWithSuffix(func() { details = cluster.GetDetails() }, attendant.Config().AwsRegion + ": " + cluster.Name)
+      for _, s := range strings.Split(details,"\n") {
+        fmt.Println("    " + s)
+      }
+    }
+  } else {
+    fmt.Println("<none>")
+  }
 }
