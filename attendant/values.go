@@ -28,9 +28,9 @@
 
 package attendant
 
-var Version = "0.1.1-dev"
-var FlightRelease = "2016.4-dev"
-var ReleaseDate = "Unknown"
+var Version = "0.2.0"
+var FlightRelease = "2016.4r1"
+var ReleaseDate = "2017-01-11"
 
 var InstanceTypes []string = []string{
   "c3.large-2C-3.75GB",
