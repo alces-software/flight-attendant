@@ -207,7 +207,7 @@ func createDomainApplianceLaunchParameters(domain *Domain, applianceType string)
       ParameterValue: aws.String(instanceType),
     },
     {
-      ParameterKey: aws.String("FlightDomain"),
+      ParameterKey: aws.String("Domain"),
       ParameterValue: aws.String(domain.Prefix()),
     },
     {
@@ -215,11 +215,11 @@ func createDomainApplianceLaunchParameters(domain *Domain, applianceType string)
       ParameterValue: aws.String(domain.VPC()),
     },
     {
-      ParameterKey: aws.String("FlightPublicSubnet"),
+      ParameterKey: aws.String("PubSubnet"),
       ParameterValue: aws.String(domain.PublicSubnet()),
     },
     {
-      ParameterKey: aws.String("FlightManagementSubnet"),
+      ParameterKey: aws.String("MgtSubnet"),
       ParameterValue: aws.String(domain.ManagementSubnet()),
     },
   }
@@ -254,7 +254,7 @@ func createApplianceLaunchParameters(appliance *Appliance) []*cloudformation.Par
       ParameterValue: aws.String(instanceType),
     },
     {
-      ParameterKey: aws.String("FlightDomain"),
+      ParameterKey: aws.String("Domain"),
       ParameterValue: aws.String(domain.Prefix()),
     },
     {
@@ -262,7 +262,7 @@ func createApplianceLaunchParameters(appliance *Appliance) []*cloudformation.Par
       ParameterValue: aws.String(domain.VPC()),
     },
     {
-      ParameterKey: aws.String("FlightPublicSubnet"),
+      ParameterKey: aws.String("PubSubnet"),
       ParameterValue: aws.String(domain.PublicSubnet()),
     },
     {

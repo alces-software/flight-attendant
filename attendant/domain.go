@@ -72,19 +72,15 @@ func (d *Domain) VPC() string {
 }
 
 func (d *Domain) PublicSubnet() string {
-  return d.getOutput("FlightPublicSubnet")
+  return d.getOutput("PubSubnet")
 }
 
 func (d *Domain) ManagementSubnet() string {
-  return d.getOutput("FlightManagementSubnet")
+  return d.getOutput("MgtSubnet")
 }
 
 func (d *Domain) PublicRouteTable() string {
-  return d.getOutput("FlightPublicRouteTable")
-}
-
-func (d *Domain) PrivateRouteTable() string {
-  return d.getOutput("FlightPrivateRouteTable")
+  return d.getOutput("PubRouteTable")
 }
 
 func (d *Domain) getOutput(key string) string {
