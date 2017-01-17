@@ -154,7 +154,11 @@ func (a Appliance) GetDetails() string {
     ip := getStackOutput(a.Stack, "DirectoryAccessIP")
     keypair := getStackParameter(a.Stack, "AccessKeyName")
     url := getStackOutput(a.Stack, "DirectoryWebAccess")
-    otherData := strings.Split(strings.Split(getStackOutput(a.Stack, "ConfigurationResult"), "\"")[3],";")
+    configData := strings.Split(getStackOutput(a.Stack, "ConfigurationResult"), "\"")
+    var otherData []string
+    if len(configData) > 3 {
+      otherData = strings.Split(configData[3],";")
+    }
     otherDetails := ""
     for _, otherDatum := range otherData {
       otherDetails += strings.TrimSpace(otherDatum) + "\n"
@@ -164,7 +168,11 @@ func (a Appliance) GetDetails() string {
     ip := getStackOutput(a.Stack, "MonitorAccessIP")
     keypair := getStackParameter(a.Stack, "AccessKeyName")
     url := getStackOutput(a.Stack, "MonitorWebAccess")
-    otherData := strings.Split(strings.Split(getStackOutput(a.Stack, "ConfigurationResult"), "\"")[3],";")
+    configData := strings.Split(getStackOutput(a.Stack, "ConfigurationResult"), "\"")
+    var otherData []string
+    if len(configData) > 3 {
+      otherData = strings.Split(configData[3],";")
+    }
     otherDetails := ""
     for _, otherDatum := range otherData {
       otherDetails += strings.TrimSpace(otherDatum) + "\n"

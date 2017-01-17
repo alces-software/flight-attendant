@@ -150,6 +150,14 @@ func (m *Master) WebAccess() string {
   return getStackOutput(m.Stack, "WebAccess")
 }
 
+func (m *Master) ClusterUUID() string {
+  return getStackConfigValue(m.Stack, "UUID")
+}
+
+func (m *Master) ClusterSecurityToken() string {
+  return getStackConfigValue(m.Stack, "Token")
+}
+
 type ComputeGroup struct {
   Stack *cloudformation.Stack
 }
@@ -307,7 +315,11 @@ func (c *Cluster) GetDetails() string {
     username := getStackOutput(c.Master.Stack, "Username")
     url := getStackOutput(c.Master.Stack, "WebAccess")
     componentStacks, _ := getComponentStacksForCluster(c)
-    details := fmt.Sprintf("IP address: %s\nKey pair: %s\nAdministrator username: %s\nAccess URL: %s\n", ip, keypair, username, url)
+    uuid := getStackConfigValue(c.Master.Stack, "UUID")
+    if uuid == "" { uuid = "<unknown>" }
+    token := getStackConfigValue(c.Master.Stack, "Token")
+    if token == "" { token = "<unknown>" }
+    details := fmt.Sprintf("Administrator username: %s\nIP address: %s\nKey pair: %s\nAccess URL: %s\nUUID: %s\nToken: %s\n", ip, keypair, username, url, uuid, token)
     if (len(componentStacks) > 0) {
       details += "\nComponents: "
       stackNames := []string{}
@@ -617,16 +629,28 @@ func createComponentLaunchParameters(cluster *Cluster, paramsFile string) []*clo
       val = cluster.Network.NetworkPool()
     case "%NETWORK_INDEX%":
       val = cluster.Network.NetworkIndex()
-    case "%PUBLIC_SUBNET%":
+    case "%PUB_SUBNET%":
       val = cluster.Network.PublicSubnet()
-    case "%MANAGEMENT_SUBNET%":
+    case "%MGT_SUBNET%":
       val = cluster.Network.ManagementSubnet()
-    case "%PRIVATE_SUBNET%":
+    case "%PRV_SUBNET%":
       val = cluster.Network.PrivateSubnet()
     case "%PLACEMENT_GROUP%":
       val = cluster.Network.PlacementGroup()
     case "%MASTER_IP%":
       val = cluster.Master.PrivateIP()
+    case "%CLUSTER_UUID%":
+      val = cluster.Master.ClusterUUID()
+    case "%CLUSTER_SECURITY_TOKEN%":
+      val = cluster.Master.ClusterSecurityToken()
+    case "%COMPUTE_PROFILES%":
+      val = viper.GetString("compute-profiles")
+    case "%PROFILE_BUCKET%":
+      val = viper.GetString("profile-bucket")
+    case "%COMPUTE_FEATURES%":
+      val = viper.GetString("compute-features")
+    case "%SCHEDULER_TYPE%":
+      val = viper.GetString("scheduler-type")
     default:
       val = value
     }
@@ -707,6 +731,14 @@ func createComputeLaunchParameters(cluster *Cluster) []*cloudformation.Parameter
     {
       ParameterKey: aws.String("MasterPrivateIP"),
       ParameterValue: aws.String(cluster.Master.PrivateIP()),
+    },
+    {
+      ParameterKey: aws.String("ClusterUUID"),
+      ParameterValue: aws.String(cluster.Master.ClusterUUID()),
+    },
+    {
+      ParameterKey: aws.String("ClusterSecurityToken"),
+      ParameterValue: aws.String(cluster.Master.ClusterSecurityToken()),
     },
   }
   instanceType := viper.GetString("compute-instance-override")
