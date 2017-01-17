@@ -281,6 +281,29 @@ func getStackOutput(stack *cloudformation.Stack, key string) string {
   return v
 }
 
+func getStackConfigValue(stack *cloudformation.Stack, key string) string {
+  var v string
+  configResult := getStackOutput(stack, "ConfigurationResult")
+  if configResult != "" {
+    configData := strings.Split(strings.Split(configResult, "\"")[3],";")
+    for _, configDatum := range configData {
+      configTuple := strings.Split(configDatum, ":")
+      if len(configTuple) == 1 {
+        configTuple = strings.Split(configDatum, "=")
+      }
+      if configTuple[0] == key {
+        if len(configTuple) == 1 {
+          v = "true"
+        } else {
+          v = strings.TrimSpace(configTuple[1])
+        }
+        break
+      }
+    }
+  }
+  return v
+}
+
 func OtherStacks() ([]*cloudformation.Stack, error) {
   var otherStacks = []*cloudformation.Stack{}
   err := eachRunningStackAll(func(stack *cloudformation.Stack) {
