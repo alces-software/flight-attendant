@@ -38,7 +38,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/cloudformation"
 )
 
-var DomainResourceCount int = 34
+var DomainResourceCount int = 35
 
 type Domain struct {
   Name string
