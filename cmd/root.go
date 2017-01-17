@@ -88,7 +88,7 @@ func Execute() {
 func init() {
 	cobra.OnInitialize(initConfig)
   attendant.Init()
-	RootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.flight.yml)")
+	RootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.fly.yml)")
   defaultRegion := os.Getenv("AWS_REGION")
   if defaultRegion == "" { defaultRegion = "us-east-1" }
   RootCmd.Flags().Bool("version", false, "Show version information")
@@ -113,7 +113,7 @@ func initConfig() {
 		viper.SetConfigFile(cfgFile)
 	}
 
-	viper.SetConfigName(".flight") // name of config file (without extension)
+	viper.SetConfigName(".fly") // name of config file (without extension)
 	viper.AddConfigPath("$HOME")  // adding home directory as first search path
   viper.SetEnvPrefix("FLIGHT")
   replacer := strings.NewReplacer("-", "_")
