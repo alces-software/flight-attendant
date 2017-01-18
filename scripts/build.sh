@@ -44,7 +44,7 @@ pkg="github.com/alces-software/flight-attendant/attendant"
 ldflags="-X $pkg.ReleaseDate=$(date +%Y-%m-%d)"
 version=${1:-0.0.0}
 ldflags="$ldflags -X $pkg.Version=$version"
-release=${2:-2016.4r1}
+release=${2:-dev}
 ldflags="$ldflags -X $pkg.FlightRelease=$release"
 
 echo "Building for v${version}, release ${release}..."
