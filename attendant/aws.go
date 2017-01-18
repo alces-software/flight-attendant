@@ -239,6 +239,32 @@ func destroyStack(svc *cloudformation.CloudFormation, stackName string) error {
   return nil
 }
 
+func destroyDetachedNICs(subnetId string) error {
+  svc, err := EC2()
+  if err != nil { return err }
+  // list NICs for subnet
+  resp, err := svc.DescribeNetworkInterfaces(&ec2.DescribeNetworkInterfacesInput{
+    Filters: []*ec2.Filter{
+      &ec2.Filter{
+        Name: aws.String("subnet-id"),
+        Values: []*string{aws.String(subnetId)},
+      },
+      &ec2.Filter{
+        Name: aws.String("attachment.status"),
+        Values: []*string{aws.String("detached")},
+      },
+    },
+  })
+  if err != nil { return err }
+  for _, nic := range resp.NetworkInterfaces {
+    _, err := svc.DeleteNetworkInterface(&ec2.DeleteNetworkInterfaceInput{
+      NetworkInterfaceId: nic.NetworkInterfaceId,
+    })
+    if err != nil { return err }
+  }
+  return nil
+}
+
 func getStack(svc *cloudformation.CloudFormation, stackName string) (*cloudformation.Stack, error) {
   stackParams := &cloudformation.DescribeStacksInput{StackName: aws.String(stackName)}
 
