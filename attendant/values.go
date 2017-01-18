@@ -134,3 +134,149 @@ var AwsRegions = []string {
   "us-west-1",
   "us-west-2",
 }
+
+var ClusterComputeParameters = map[string]string {
+  "ClusterName": "%CLUSTER_NAME%",
+  "AccessKeyName": "%ACCESS_KEY_NAME%",
+  "AccessUsername": "%ADMIN_USER_NAME%",
+
+  "SchedulerType": "%SCHEDULER_TYPE%",
+  "FlightFeatures": "%COMPUTE_FEATURES%",
+  "FlightProfileBucket": "%PROFILE_BUCKET%",
+  "FlightProfiles": "%COMPUTE_PROFILES%",
+
+  "ComputeInstanceType": "%COMPUTE_INSTANCE_TYPE%",
+  "ComputeInstanceTypeOther": "%COMPUTE_INSTANCE_OVERRIDE%",
+  "ComputeSpotPrice": "%COMPUTE_SPOT_PRICE%",
+  "AutoscalingPolicy": "%COMPUTE_AUTOSCALING_POLICY%",
+  "ComputeInitialNodes": "%COMPUTE_INITIAL_NODES%",
+
+  "ComputeSystemVolumeType": "%COMPUTE_SYSTEM_VOLUME_TYPE%",
+
+  "Domain": "%DOMAIN%",
+  "FlightVPC": "%VPC%",
+  "MgtSubnet": "%MGT_SUBNET%",
+  "PlacementGroup": "%PLACEMENT_GROUP%",
+  "NetworkingPool": "%NETWORK_POOL%",
+  "NetworkingIndex": "%NETWORK_INDEX%",
+  "MasterPrivateIP": "%MASTER_IP%",
+  "PrvSubnet": "%PRV_SUBNET%",
+
+  "ClusterUUID": "%CLUSTER_UUID%",
+  "ClusterSecurityToken": "%CLUSTER_SECURITY_TOKEN%",
+}
+
+var ClusterNetworkParameters = map[string]string {
+  "FlightVPC": "%VPC%",
+  "NetworkingPool": "%NETWORK_POOL%",
+  "NetworkingIndex": "%NETWORK_INDEX%",
+  "PubRouteTable": "%PUB_ROUTE_TABLE%",
+}
+
+var ClusterMasterParameters = map[string]string {
+  "ClusterName": "%CLUSTER_NAME%",
+  "AccessKeyName": "%ACCESS_KEY_NAME%",
+  "AccessUsername": "%ADMIN_USER_NAME%",
+  "AccessNetwork": "%ACCESS_NETWORK%",
+
+  "SchedulerType": "%SCHEDULER_TYPE%",
+  "PreloadSoftware": "%PRELOAD_SOFTWARE%",
+  "FlightFeatures": "%MASTER_FEATURES%",
+  "FlightProfileBucket": "%PROFILE_BUCKET%",
+  "FlightProfiles": "%MASTER_PROFILES%",
+
+  "MasterInstanceType": "%MASTER_INSTANCE_TYPE%",
+  "MasterInstanceTypeOther": "%MASTER_INSTANCE_OVERRIDE%",
+
+  "VolumeLayout": "%MASTER_VOLUME_LAYOUT%",
+  "VolumeEncryptionPolicy": "%MASTER_VOLUME_ENCRYPTION_POLICY%",
+  "MasterSystemVolumeSize": "%MASTER_SYSTEM_VOLUME_SIZE%",
+  "MasterSystemVolumeType": "%MASTER_SYSTEM_VOLUME_TYPE%",
+  "HomeVolumeSize": "%MASTER_APPS_VOLUME_SIZE%",
+  "AppsVolumeSize": "%MASTER_APPS_VOLUME_SIZE%",
+  "HomeVolumeType": "%MASTER_HOME_VOLUME_TYPE%",
+  "AppsVolumeType": "%MASTER_APPS_VOLUME_TYPE%",
+
+  "Domain": "%DOMAIN%",
+  "FlightVPC": "%VPC%",
+  "PubSubnet": "%PUB_SUBNET%",
+  "MgtSubnet": "%MGT_SUBNET%",
+  "PlacementGroup": "%PLACEMENT_GROUP%",
+  "NetworkingPool": "%NETWORK_POOL%",
+  "NetworkingIndex": "%NETWORK_INDEX%",
+  "PrvSubnet": "%PRV_SUBNET%",
+}
+
+var DomainApplianceParameters = map[string]string {
+  "AccessKeyName": "%ACCESS_KEY_NAME%",
+  "AccessNetwork": "%ACCESS_NETWORK%",
+
+  "FlightProfileBucket": "%PROFILE_BUCKET%",
+  "FlightProfiles": "%APPLIANCE_PROFILES%",
+
+  "ApplianceInstanceType": "%APPLIANCE_INSTANCE_TYPE%",
+
+  "Domain": "%DOMAIN%",
+  "FlightVPC": "%VPC%",
+  "PubSubnet": "%PUB_SUBNET%",
+  "MgtSubnet": "%MGT_SUBNET%",
+}
+
+var BasicApplianceParameters = map[string]string {
+  "AccessKeyName": "%ACCESS_KEY_NAME%",
+  "AccessUsername": "%ADMIN_USER_NAME%",
+  "AccessNetwork": "%ACCESS_NETWORK%",
+
+  "FlightFeatures": "%APPLIANCE_FEATURES%",
+  "FlightProfileBucket": "%PROFILE_BUCKET%",
+  "FlightProfiles": "%APPLIANCE_PROFILES%",
+
+  "ApplianceInstanceType": "%APPLIANCE_INSTANCE_TYPE%",
+
+  "Domain": "%DOMAIN%",
+  "FlightVPC": "%VPC%",
+  "PubSubnet": "%PUB_SUBNET%",
+}
+
+var SoloParameters = map[string]string {
+  "ClusterName": "%CLUSTER_NAME%",
+  "AccessKeyName": "%ACCESS_KEY_NAME%",
+  "AccessUsername": "%ADMIN_USER_NAME%",
+  "AccessNetwork": "%ACCESS_NETWORK%",
+
+  "SchedulerType": "%SCHEDULER_TYPE%",
+  "PreloadSoftware": "%PRELOAD_SOFTWARE%",
+  "FlightFeatures": "%MASTER_FEATURES%",
+  "FlightProfileBucket": "%PROFILE_BUCKET%",
+  "FlightProfiles": "%MASTER_PROFILES%",
+
+  "MasterInstanceType": "%MASTER_INSTANCE_TYPE%",
+  "MasterInstanceTypeOther": "%MASTER_INSTANCE_OVERRIDE%",
+
+  "ComputeInstanceType": "%COMPUTE_INSTANCE_TYPE%",
+  "ComputeInstanceTypeOther": "%COMPUTE_INSTANCE_OVERRIDE%",
+  "ComputeSpotPrice": "%COMPUTE_SPOT_PRICE%",
+  "AutoscalingPolicy": "%COMPUTE_AUTOSCALING_POLICY%",
+  "ComputeInitialNodes": "%COMPUTE_INITIAL_NODES%",
+
+  "VolumeLayout": "%MASTER_VOLUME_LAYOUT%",
+  "VolumeEncryptionPolicy": "%MASTER_VOLUME_ENCRYPTION_POLICY%",
+  "MasterSystemVolumeSize": "%MASTER_SYSTEM_VOLUME_SIZE%",
+  "MasterSystemVolumeType": "%MASTER_SYSTEM_VOLUME_TYPE%",
+  "HomeVolumeSize": "%MASTER_APPS_VOLUME_SIZE%",
+  "AppsVolumeSize": "%MASTER_APPS_VOLUME_SIZE%",
+  "HomeVolumeType": "%MASTER_HOME_VOLUME_TYPE%",
+  "AppsVolumeType": "%MASTER_APPS_VOLUME_TYPE%",
+  "ComputeSystemVolumeType": "%COMPUTE_SYSTEM_VOLUME_TYPE%",
+}
+
+var ParameterSets = map[string]*map[string]string {
+  "cluster-network": &ClusterNetworkParameters,
+  "cluster-master": &ClusterMasterParameters,
+  "cluster-compute": &ClusterComputeParameters,
+  "solo": &SoloParameters,
+  "directory": &DomainApplianceParameters,
+  "monitor": &DomainApplianceParameters,
+  "storage-manager": &BasicApplianceParameters,
+  "access-manager": &BasicApplianceParameters,
+}

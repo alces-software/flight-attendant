@@ -69,6 +69,12 @@ on your Alces Flight Compute architecture.`,
         return
       }
       fmt.Println(cfg)
+    } else if v, _ := cmd.Flags().GetString("create-parameter-directory"); v != "" {
+      err := attendant.CreateParameterDirectory(v)
+      if err != nil {
+        fmt.Println(err.Error())
+        return
+      }
     } else {
 			cmd.Help()
 			return
@@ -95,12 +101,15 @@ func init() {
   RootCmd.PersistentFlags().String("region", defaultRegion, "AWS region")
   RootCmd.PersistentFlags().String("access-key", "", "AWS access key ID")
   RootCmd.PersistentFlags().String("secret-key", "", "AWS secret access key")
+  RootCmd.PersistentFlags().String("parameter-directory", "", "Directory containing component parameter files")
   RootCmd.Flags().Bool("show-config-example", false, "Display an example configuration file")
   RootCmd.Flags().Bool("show-config-values", false, "Display valid configuration values")
+  RootCmd.Flags().String("create-parameter-directory", "", "Write default parameter files to a directory")
 
   viper.BindPFlag("region", RootCmd.PersistentFlags().Lookup("region"))
   viper.BindPFlag("access-key", RootCmd.PersistentFlags().Lookup("access-key"))
   viper.BindPFlag("secret-key", RootCmd.PersistentFlags().Lookup("secret-key"))
+  viper.BindPFlag("parameter-directory", RootCmd.PersistentFlags().Lookup("parameter-directory"))
 
   for key, val := range attendant.ConfigDefaults {
     viper.SetDefault(key, val)
@@ -115,7 +124,7 @@ func initConfig() {
 
 	viper.SetConfigName(".fly") // name of config file (without extension)
 	viper.AddConfigPath("$HOME")  // adding home directory as first search path
-  viper.SetEnvPrefix("FLIGHT")
+  viper.SetEnvPrefix("FLY")
   replacer := strings.NewReplacer("-", "_")
   viper.SetEnvKeyReplacer(replacer)
 	viper.AutomaticEnv()          // read in environment variables that match
@@ -140,6 +149,8 @@ func initConfig() {
   if cfg.AwsSecretKey == "" {
      cfg.AwsSecretKey = os.Getenv("AWS_SECRET_ACCESS_KEY")
   }
+
+  cfg.ParameterDirectory = viper.GetString("parameter-directory")
 }
 
 func addDomainFlag(command *cobra.Command, cmdName string) {

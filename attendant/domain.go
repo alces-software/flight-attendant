@@ -79,6 +79,14 @@ func (d *Domain) ManagementSubnet() string {
   return d.getOutput("MgtSubnet")
 }
 
+func (d *Domain) PrivateSubnet() string {
+  return d.getOutput("PrvSubnet")
+}
+
+func (d *Domain) PlacementGroup() string {
+  return d.getOutput("PlacementGroup")
+}
+
 func (d *Domain) PublicRouteTable() string {
   return d.getOutput("PubRouteTable")
 }

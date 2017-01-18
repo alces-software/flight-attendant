@@ -30,6 +30,7 @@ package attendant
 
 import (
   "fmt"
+  "os"
   "strings"
   "gopkg.in/yaml.v2"
 )
@@ -42,7 +43,8 @@ var ConfigDefaults = map[string]string {
   "secret-key": "",
   "template-root": "",
   "template-set": FlightRelease,
-
+  "parameter-directory": "",
+  
   "admin-user-name": "alces",
   "access-network": "0.0.0.0/0",
   "scheduler-type": "gridscheduler",
@@ -97,6 +99,7 @@ type Configuration struct {
   AccessKeyName string
   TemplateRoot string
   TemplateSet string
+  ParameterDirectory string
 }
 
 var config *Configuration
@@ -144,4 +147,20 @@ func TemplateUrl(templateName string) string {
     url = Config().TemplateRoot + "/" + Config().TemplateSet + "/" + templateName
   }
   return url
+}
+
+func CreateParameterDirectory(directory string) error {
+  // Make directory
+  err := os.Mkdir(directory, 0755)
+  if err != nil { return err }
+  for name, parameterSet := range ParameterSets {
+    f, err := os.Create(directory + "/" + name + ".yml")
+    if err != nil { return err }
+    yaml, err := yaml.Marshal(parameterSet)
+    if err != nil { return err }
+    _, err = f.Write(yaml)
+    if err != nil { return err }
+    fmt.Println("Wrote: " + directory + "/" + name + ".yml")
+  }
+  return nil
 }
