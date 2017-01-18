@@ -38,6 +38,7 @@ import (
 	"github.com/spf13/viper"
 
   "github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/cloudformation"
 
   "gopkg.in/yaml.v2"
@@ -350,6 +351,25 @@ func destroyMaster(cluster *Cluster, svc *cloudformation.CloudFormation) error {
 
 func destroyClusterNetwork(cluster *Cluster, svc *cloudformation.CloudFormation) error {
   stackName := fmt.Sprintf("flight-%s-%s-network", cluster.Domain.Name, cluster.Name)
+
+  networkStack, err := getStack(svc, stackName)
+  if err != nil {
+    if aerr, ok := err.(awserr.Error); ok {
+      if strings.Contains(aerr.Message(), "does not exist") {
+        return nil
+      } else {
+        return err
+      }
+    }
+  }
+  idx, err := strconv.Atoi(getStackTag(networkStack, "flight:network"))
+  if err != nil { return err }
+  cluster.Network = &ClusterNetwork{idx, networkStack}
+
+  // handle destruction of unassociated NICs
+  err = destroyDetachedNICs(cluster.Network.ManagementSubnet())
+  if err != nil { return err }
+
   return destroyStack(svc, stackName)
 }
 
