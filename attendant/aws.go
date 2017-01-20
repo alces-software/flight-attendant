@@ -374,10 +374,14 @@ func eachRunningStackAll(fn func(stack *cloudformation.Stack)) error {
       })
     }
     getter()
-    if err != nil && strings.HasPrefix(err.Error(), "Throttling: Rate exceeded") {
-      getter()
-    } else if err != nil {
-      return err
+    if err != nil {
+      if strings.HasPrefix(err.Error(), "Throttling: Rate exceeded") {
+        getter()
+      } else if strings.HasPrefix(err.Error(), "AccessDenied") {
+        continue
+      } else {
+        return err
+      }
     }
     fn(stacksResp.Stacks[0])
   }
@@ -404,7 +408,13 @@ func eachRunningStack(fn func(stack *cloudformation.Stack)) error {
 			stacksResp, err := svc.DescribeStacks(&cloudformation.DescribeStacksInput{
 				StackName: value.StackName,
 			})
-			if err != nil { return err }
+      if err != nil {
+        if strings.HasPrefix(err.Error(), "AccessDenied") {
+          continue
+        } else {
+          return err
+        }
+      }
       fn(stacksResp.Stacks[0])
 		}
 	}
