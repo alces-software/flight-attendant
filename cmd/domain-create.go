@@ -29,41 +29,38 @@
 package cmd
 
 import (
-	"fmt"
+  "fmt"
   
-	"github.com/spf13/cobra"
+  "github.com/spf13/cobra"
 
-	"github.com/alces-software/flight-attendant/attendant"
+  "github.com/alces-software/flight-attendant/attendant"
 )
 
 // createCmd represents the create command
 var domainCreateCmd = &cobra.Command{
-	Use:   "create <domain>",
-	Short: "Create a Flight Compute domain",
-	Long: `Create a Flight Compute domain.`,
-	Run: func(cmd *cobra.Command, args []string) {
-		if len(args) == 0 {
-			cmd.Help()
-			return
-		}
-
-    if err := setupTemplateSource("domainCreate"); err != nil {
-      fmt.Println(err.Error())
-      return
+  Use:   "create <domain>",
+  Short: "Create a Flight Compute domain",
+  Long: `Create a Flight Compute domain.`,
+  SilenceUsage: true,
+  RunE: func(cmd *cobra.Command, args []string) error {
+    if len(args) == 0 {
+      cmd.Help()
+      return nil
     }
+
+    if err := setupTemplateSource("domainCreate"); err != nil { return err }
 
     fmt.Printf("Creating domain '%s' (%s)...\n\n", args[0], attendant.Config().AwsRegion)
     _, err := createDomain(args[0])
-		if err != nil {
-			fmt.Println(err.Error())
-			return
-		}
+    if err != nil { return err }
+
     fmt.Println("\nDomain created.")
-	},
+    return nil
+  },
 }
 
 func init() {
-	domainCmd.AddCommand(domainCreateCmd)
+  domainCmd.AddCommand(domainCreateCmd)
   addTemplateSetFlag(domainCreateCmd, "domainCreate")
   addTemplateRootFlag(domainCreateCmd, "domainCreate")
 }

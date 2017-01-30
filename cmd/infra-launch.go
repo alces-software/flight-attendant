@@ -29,48 +29,38 @@
 package cmd
 
 import (
-	"fmt"
+  "fmt"
 
-	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
+  "github.com/spf13/cobra"
+  "github.com/spf13/viper"
 
-	"github.com/alces-software/flight-attendant/attendant"
+  "github.com/alces-software/flight-attendant/attendant"
 )
 
 // launchCmd represents the launch command
 var infraLaunchCmd = &cobra.Command{
-	Use:   "launch [<appliance>|--all]",
-	Short: "Launch a Flight infrastructure appliance",
-	Long: `Launch a Flight infrastructure appliance.`,
-	Run: func(cmd *cobra.Command, args []string) {
+  Use:   "launch [<appliance>|--all]",
+  Short: "Launch a Flight infrastructure appliance",
+  Long: `Launch a Flight infrastructure appliance.`,
+  SilenceUsage: true,
+  RunE: func(cmd *cobra.Command, args []string) error {
     var err error
 
     all, _ := cmd.Flags().GetBool("all")
-		if !all {
+    if !all {
       if len(args) == 0 {
         cmd.Help()
-        return
+        return nil
       } else if ! attendant.IsValidApplianceType(args[0]) {
-        fmt.Printf("Unknown appliance type: %s\n", args[0])
-        return
+        return fmt.Errorf("Unknown appliance type: %s\n", args[0])
       }
-		}
-
-    if err := setupTemplateSource("infraLaunch"); err != nil {
-      fmt.Println(err.Error())
-      return
     }
 
-    if err := setupKeyPair("infraLaunch"); err != nil {
-      fmt.Println(err.Error())
-      return
-    }
+    if err := setupTemplateSource("infraLaunch"); err != nil { return err }
+    if err := setupKeyPair("infraLaunch"); err != nil { return err }
 
     domain, err := findDomain("infraLaunch", true)
-    if err != nil {
-      fmt.Println(err.Error())
-      return
-    }
+    if err != nil { return err }
 
     if all {
       for applianceName, _ := range attendant.ApplianceTemplates {
@@ -92,15 +82,13 @@ var infraLaunchCmd = &cobra.Command{
         fmt.Println(appliance.GetDetails() + "\n")
       }
     }
-		if err != nil {
-			fmt.Println(err.Error())
-			return
-    }
-	},
+    if err != nil { return err }
+    return nil
+  },
 }
 
 func init() {
-	infraCmd.AddCommand(infraLaunchCmd)
+  infraCmd.AddCommand(infraLaunchCmd)
   addDomainFlag(infraLaunchCmd, "infraLaunch")
   addKeyPairFlag(infraLaunchCmd, "infraLaunch")
   addTemplateSetFlag(infraLaunchCmd, "infraLaunch")

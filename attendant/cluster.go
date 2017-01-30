@@ -38,6 +38,7 @@ import (
 	"github.com/spf13/viper"
 
   "github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/cloudformation"
 
   "gopkg.in/yaml.v2"
@@ -81,11 +82,11 @@ var ComputeInstanceTypes = []string{
   "enterprise-128C-1952GB.dedicated-x1.32xlarge",
 }
 
-// network: 20
-// master: 12
-// compute: 13
+// network: 19 (18)
+// master: 16 (15)
+// compute: 10 (9)
 var ClusterResourceCount int = 45
-var SoloClusterResourceCount int = 48
+var SoloClusterResourceCount int = 46
 
 func IsValidComputeInstanceType(instanceType string) bool {
   return containsS(ComputeInstanceTypes, instanceType)
@@ -107,31 +108,35 @@ type ClusterNetwork struct {
 }
 
 func (c *ClusterNetwork) NetworkPool() string {
-  return getStackParameter(c.Stack, "FlightNetworkingPool")
+  if c.Stack == nil {
+    return strconv.Itoa((c.Index / 32) + 1)
+  } else {
+    return getStackParameter(c.Stack, "NetworkingPool")
+  }
 }
 
 func (c *ClusterNetwork) NetworkIndex() string {
-  return getStackParameter(c.Stack, "FlightNetworkingIndex")
+  if c.Stack == nil {
+    return strconv.Itoa((c.Index % 32) + 1)
+  } else {
+    return getStackParameter(c.Stack, "NetworkingIndex")
+  }
 }
 
 func (c *ClusterNetwork) PublicSubnet() string {
-  return getStackOutput(c.Stack, "FlightPublicSubnet")
+  return getStackOutput(c.Stack, "PubSubnet")
 }
 
 func (c *ClusterNetwork) ManagementSubnet() string {
-  return getStackOutput(c.Stack, "FlightManagementSubnet")
+  return getStackOutput(c.Stack, "MgtSubnet")
 }
 
 func (c *ClusterNetwork) PrivateSubnet() string {
-  return getStackOutput(c.Stack, "FlightPrivateSubnet")
+  return getStackOutput(c.Stack, "PrvSubnet")
 }
 
 func (c *ClusterNetwork) PlacementGroup() string {
-  return getStackOutput(c.Stack, "FlightPlacementGroup")
-}
-
-func (c *ClusterNetwork) PrivateRouteTable() string {
-  return getStackOutput(c.Stack, "FlightPrivateRouteTable")
+  return getStackOutput(c.Stack, "PlacementGroup")
 }
 
 type Master struct {
@@ -143,7 +148,7 @@ func (m *Master) AccessIP() string {
 }
 
 func (m *Master) PrivateIP() string {
-  return getStackOutput(m.Stack, "FlightLoginPrivateIP")
+  return getStackOutput(m.Stack, "MasterPrivateIP")
 }
 
 func (m *Master) Username() string {
@@ -152,6 +157,14 @@ func (m *Master) Username() string {
 
 func (m *Master) WebAccess() string {
   return getStackOutput(m.Stack, "WebAccess")
+}
+
+func (m *Master) ClusterUUID() string {
+  return getStackConfigValue(m.Stack, "UUID")
+}
+
+func (m *Master) ClusterSecurityToken() string {
+  return getStackConfigValue(m.Stack, "Token")
 }
 
 type ComputeGroup struct {
@@ -311,7 +324,11 @@ func (c *Cluster) GetDetails() string {
     username := getStackOutput(c.Master.Stack, "Username")
     url := getStackOutput(c.Master.Stack, "WebAccess")
     componentStacks, _ := getComponentStacksForCluster(c)
-    details := fmt.Sprintf("IP address: %s\nKey pair: %s\nAdministrator username: %s\nAccess URL: %s\n", ip, keypair, username, url)
+    uuid := getStackConfigValue(c.Master.Stack, "UUID")
+    if uuid == "" { uuid = "<unknown>" }
+    token := getStackConfigValue(c.Master.Stack, "Token")
+    if token == "" { token = "<unknown>" }
+    details := fmt.Sprintf("Administrator username: %s\nIP address: %s\nKey pair: %s\nAccess URL: %s\nUUID: %s\nToken: %s\n", ip, keypair, username, url, uuid, token)
     if (len(componentStacks) > 0) {
       details += "\nComponents: "
       stackNames := []string{}
@@ -342,6 +359,25 @@ func destroyMaster(cluster *Cluster, svc *cloudformation.CloudFormation) error {
 
 func destroyClusterNetwork(cluster *Cluster, svc *cloudformation.CloudFormation) error {
   stackName := fmt.Sprintf("flight-%s-%s-network", cluster.Domain.Name, cluster.Name)
+
+  networkStack, err := getStack(svc, stackName)
+  if err != nil {
+    if aerr, ok := err.(awserr.Error); ok {
+      if strings.Contains(aerr.Message(), "does not exist") {
+        return nil
+      } else {
+        return err
+      }
+    }
+  }
+  idx, err := strconv.Atoi(getStackTag(networkStack, "flight:network"))
+  if err != nil { return err }
+  cluster.Network = &ClusterNetwork{idx, networkStack}
+
+  // handle destruction of unassociated NICs
+  err = destroyDetachedNICs(cluster.Network.ManagementSubnet())
+  if err != nil { return err }
+
   return destroyStack(svc, stackName)
 }
 
@@ -361,7 +397,8 @@ func destroyComponent(cluster *Cluster, componentType, componentName string, svc
 }
 
 func createMaster(cluster *Cluster, svc *cloudformation.CloudFormation) error {
-  launchParams := createMasterLaunchParameters(cluster)
+  launchParams := createClusterComponentLaunchParameters(cluster,
+    loadParameterSet("cluster-master", ClusterMasterParameters))
   stackName := fmt.Sprintf("flight-%s-%s-master", cluster.Domain.Name, cluster.Name)
   url := TemplateUrl(clusterMasterTemplate)
 
@@ -373,7 +410,7 @@ func createMaster(cluster *Cluster, svc *cloudformation.CloudFormation) error {
 }
 
 func createComponent(componentType, componentName, componentParamsFile string, cluster *Cluster, svc *cloudformation.CloudFormation) error {
-  launchParams := createComponentLaunchParameters(cluster, componentParamsFile)
+  launchParams := createClusterComponentLaunchParameters(cluster, loadComponentParameters(componentParamsFile))
   if componentName == "" {
     componentName = componentType
   } else {
@@ -388,8 +425,19 @@ func createComponent(componentType, componentName, componentParamsFile string, c
   return nil
 }
 
+func loadParameterSet(componentName string, defaultParameterSet map[string]string) map[string]string {
+  if Config().ParameterDirectory != "" {
+    parameterSet := loadComponentParameters(Config().ParameterDirectory + "/" + componentName + ".yml")
+    if len(parameterSet) > 0 {
+      return parameterSet
+    }
+  }
+  return defaultParameterSet
+}
+
 func createComputeGroup(cluster *Cluster, svc *cloudformation.CloudFormation) error {
-  launchParams := createComputeLaunchParameters(cluster)
+  launchParams := createClusterComponentLaunchParameters(cluster,
+    loadParameterSet("cluster-compute", ClusterComputeParameters))
   stackName := fmt.Sprintf("flight-%s-%s-compute-%d",
     cluster.Domain.Name,
     cluster.Name,
@@ -407,7 +455,9 @@ func createClusterNetwork(cluster *Cluster, svc *cloudformation.CloudFormation) 
   network, err := cluster.Domain.BookNetwork()
   if err != nil { return err }
 
-  launchParams := createNetworkLaunchParameters(cluster, network)
+  cluster.Network = &ClusterNetwork{network, nil}
+  launchParams := createClusterComponentLaunchParameters(cluster,
+    loadParameterSet("cluster-network", ClusterNetworkParameters))
   stackName := fmt.Sprintf("flight-%s-%s-network", cluster.Domain.Name, cluster.Name)
   url := TemplateUrl(clusterNetworkTemplate)
   tags := append(cluster.Tags(), &cloudformation.Tag{Key: aws.String("flight:network"), Value: aws.String(strconv.Itoa(network))})
@@ -415,7 +465,7 @@ func createClusterNetwork(cluster *Cluster, svc *cloudformation.CloudFormation) 
   stack, err := createStack(svc, launchParams, tags, url, stackName, "network", cluster.TopicARN, cluster.Domain)
   if err != nil { return err }
 
-  cluster.Network = &ClusterNetwork{network, stack}
+  cluster.Network.Stack = stack
   err = cluster.CreateEntity()
   if err != nil { return err }
 
@@ -423,7 +473,8 @@ func createClusterNetwork(cluster *Cluster, svc *cloudformation.CloudFormation) 
 }
 
 func createSoloCluster(cluster *Cluster, svc *cloudformation.CloudFormation) error {
-  launchParams := createSoloLaunchParameters(cluster)
+  launchParams := createClusterComponentLaunchParameters(cluster,
+    loadParameterSet("solo", SoloParameters))
   stackName := fmt.Sprintf("flight-cluster-%s", cluster.Name)
   url := TemplateUrl(soloClusterTemplate)
 
@@ -434,157 +485,86 @@ func createSoloCluster(cluster *Cluster, svc *cloudformation.CloudFormation) err
   return nil
 }
 
-func createNetworkLaunchParameters(cluster *Cluster, network int) []*cloudformation.Parameter {
-  networkPool := (network / 32) + 1
-  networkIndex := (network % 32) + 1
-
-  params := []*cloudformation.Parameter{
-    {
-      ParameterKey: aws.String("FlightVPC"),
-      ParameterValue: aws.String(cluster.Domain.VPC()),
-    },
-    {
-      ParameterKey: aws.String("FlightNetworkingPool"),
-      ParameterValue: aws.String(strconv.Itoa(networkPool)),
-    },
-    {
-      ParameterKey: aws.String("FlightNetworkingIndex"),
-      ParameterValue: aws.String(strconv.Itoa(networkIndex)),
-    },
-    {
-      ParameterKey: aws.String("FlightPublicRouteTable"),
-      ParameterValue: aws.String(cluster.Domain.PublicRouteTable()),
-    },
-  }
-  return params
-}
-
-func createMasterLaunchParameters(cluster *Cluster) []*cloudformation.Parameter {
-  masterFeatures := viper.GetString("master-features")
-  if masterFeatures != "" {
-    masterFeatures = masterFeatures + " password-auth"
-  } else {
-    masterFeatures = "password-auth"
-  }
-  params := []*cloudformation.Parameter{
-    {
-      ParameterKey: aws.String("AccessKeyName"),
-      ParameterValue: aws.String(Config().AccessKeyName),
-    },
-    {
-      ParameterKey: aws.String("AccessNetwork"),
-      ParameterValue: aws.String(viper.GetString("access-network")),
-    },
-    {
-      ParameterKey: aws.String("AccessUsername"),
-      ParameterValue: aws.String(viper.GetString("admin-user-name")),
-    },
-    {
-      ParameterKey: aws.String("ClusterName"),
-      ParameterValue: aws.String(cluster.Name),
-    },
-    {
-      ParameterKey: aws.String("FlightVPC"),
-      ParameterValue: aws.String(cluster.Domain.VPC()),
-    },
-    {
-      ParameterKey: aws.String("FlightDomain"),
-      ParameterValue: aws.String(cluster.Domain.Prefix()),
-    },
-    {
-      ParameterKey: aws.String("FlightNetworkingPool"),
-      ParameterValue: aws.String(cluster.Network.NetworkPool()),
-    },
-    {
-      ParameterKey: aws.String("FlightNetworkingIndex"),
-      ParameterValue: aws.String(cluster.Network.NetworkIndex()),
-    },
-    {
-      ParameterKey: aws.String("FlightPublicSubnet"),
-      ParameterValue: aws.String(cluster.Network.PublicSubnet()),
-    },
-    {
-      ParameterKey: aws.String("FlightManagementSubnet"),
-      ParameterValue: aws.String(cluster.Network.ManagementSubnet()),
-    },
-    {
-      ParameterKey: aws.String("FlightPlacementGroup"),
-      ParameterValue: aws.String(cluster.Network.PlacementGroup()),
-    },
-    {
-      ParameterKey: aws.String("FlightPrivateRouteTable"),
-      ParameterValue: aws.String(cluster.Network.PrivateRouteTable()),
-    },
-    {
-      ParameterKey: aws.String("FlightFeatures"),
-      ParameterValue: aws.String(masterFeatures),
-    },
-    {
-      ParameterKey: aws.String("FlightProfileBucket"),
-      ParameterValue: aws.String(viper.GetString("profile-bucket")),
-    },
-    {
-      ParameterKey: aws.String("FlightProfiles"),
-      ParameterValue: aws.String(viper.GetString("master-profiles")),
-    },
-    {
-      ParameterKey: aws.String("FlightPreloadSoftware"),
-      ParameterValue: aws.String(viper.GetString("preload-software")),
-    },
-    {
-      ParameterKey: aws.String("FlightSchedulerType"),
-      ParameterValue: aws.String(viper.GetString("scheduler-type")),
-    },
-    {
-      ParameterKey: aws.String("VolumeLayout"),
-      ParameterValue: aws.String(viper.GetString("master-volume-layout")),
-    },
-    {
-      ParameterKey: aws.String("VolumeEncryptionPolicy"),
-      ParameterValue: aws.String(viper.GetString("master-volume-encryption-policy")),
-    },
-    {
-      ParameterKey: aws.String("LoginSystemVolumeSize"),
-      ParameterValue: aws.String(viper.GetString("master-system-volume-size")),
-    },
-    {
-      ParameterKey: aws.String("LoginSystemVolumeType"),
-      ParameterValue: aws.String(viper.GetString("master-system-volume-type")),
-    },
-    {
-      ParameterKey: aws.String("AppsVolumeSize"),
-      ParameterValue: aws.String(viper.GetString("master-apps-volume-size")),
-    },
-    {
-      ParameterKey: aws.String("AppsVolumeType"),
-      ParameterValue: aws.String(viper.GetString("master-apps-volume-type")),
-    },
-    {
-      ParameterKey: aws.String("HomeVolumeSize"),
-      ParameterValue: aws.String(viper.GetString("master-home-volume-size")),
-    },
-    {
-      ParameterKey: aws.String("HomeVolumeType"),
-      ParameterValue: aws.String(viper.GetString("master-home-volume-type")),
-    },
-  }
-  instanceType := viper.GetString("master-instance-override")
-  if instanceType != "" {
-    params = append(params, []*cloudformation.Parameter{
-      {
-        ParameterKey: aws.String("LoginInstanceType"),
-        ParameterValue: aws.String("other"),
-      },
-      {
-        ParameterKey: aws.String("LoginInstanceTypeOther"),
-        ParameterValue: aws.String(instanceType),
-      },
-    }...)
-  } else {
-    params = append(params, &cloudformation.Parameter{
-      ParameterKey: aws.String("LoginInstanceType"),
-      ParameterValue: aws.String(viper.GetString("master-instance-type")),
-    })
+func createClusterComponentLaunchParameters(cluster *Cluster, parameterSet map[string]string) []*cloudformation.Parameter {
+  params := []*cloudformation.Parameter{}
+  for key, value := range parameterSet {
+    var val string
+    switch value  {
+    case "%CLUSTER_NAME%":
+      val = cluster.Name
+    case "%ACCESS_KEY_NAME%":
+      val = Config().AccessKeyName
+    case "%MASTER_INSTANCE_TYPE%":
+      instanceOverride := viper.GetString("master-instance-override")
+      if instanceOverride != "" {
+        val = "other"
+      } else {
+        val = viper.GetString("master-instance-type")
+      }
+    case "%MASTER_INSTANCE_OVERRIDE%":
+      val = viper.GetString("master-instance-override")
+      if val == "" { val = "%NULL%" }
+    case "%MASTER_FEATURES%":
+      // XXX - should password-auth be mandated within template?
+      masterFeatures := viper.GetString("master-features")
+      if masterFeatures != "" {
+        val = masterFeatures + " password-auth"
+      } else {
+        val = "password-auth"
+      }
+    case "%COMPUTE_INSTANCE_TYPE%":
+      instanceOverride := viper.GetString("compute-instance-override")
+      if instanceOverride != "" {
+        val = "other"
+      } else {
+        val = viper.GetString("compute-instance-type")
+      }
+    case "%COMPUTE_INSTANCE_OVERRIDE%":
+      val = viper.GetString("compute-instance-override")
+      if val == "" { val = "%NULL%" }
+    case "%VPC%":
+      val = cluster.Domain.VPC()
+    case "%NETWORK_POOL%":
+      val = cluster.Network.NetworkPool()
+    case "%NETWORK_INDEX%":
+      val = cluster.Network.NetworkIndex()
+    case "%PUB_ROUTE_TABLE%":
+      val = cluster.Domain.PublicRouteTable()
+    case "%DOMAIN%":
+      val = cluster.Domain.Prefix()
+    case "%PUB_SUBNET%":
+      val = cluster.Network.PublicSubnet()
+    case "%MGT_SUBNET%":
+      val = cluster.Network.ManagementSubnet()
+    case "%PRV_SUBNET%":
+      val = cluster.Network.PrivateSubnet()
+    case "%PLACEMENT_GROUP%":
+      val = cluster.Network.PlacementGroup()
+    case "%MASTER_IP%":
+      val = cluster.Master.PrivateIP()
+    case "%CLUSTER_UUID%":
+      val = cluster.Master.ClusterUUID()
+    case "%CLUSTER_SECURITY_TOKEN%":
+      val = cluster.Master.ClusterSecurityToken()
+    default:
+      if strings.HasPrefix(value, "%") && strings.HasSuffix(value, "%") {
+        configKey := strings.ToLower(strings.Replace(value[1:len(value)-1], "_", "-", -1))
+        if viper.IsSet(configKey) {
+          val = viper.GetString(configKey)
+        } else {
+          val = "%NULL%"
+        }
+      } else {
+        val = value
+      }
+    }
+    if val != "%NULL%" {
+      // fmt.Println(key + " -> " + val)
+      params = append(params, &cloudformation.Parameter{
+        ParameterKey: aws.String(key),
+        ParameterValue: aws.String(val),
+      })
+    }
   }
   return params
 }
@@ -596,265 +576,6 @@ func loadComponentParameters(paramsFile string) map[string]string {
     if err != nil { fmt.Println(err.Error()) }
     err = yaml.Unmarshal(data, &params)
     if err != nil { fmt.Println(err.Error()) }
-  }
-  return params
-}
-
-func createComponentLaunchParameters(cluster *Cluster, paramsFile string) []*cloudformation.Parameter {
-  params := []*cloudformation.Parameter{}
-  for key, value := range loadComponentParameters(paramsFile) {
-    var val string
-    switch value  {
-    case "%ACCESS_KEY_NAME%":
-      val = Config().AccessKeyName
-    case "%ACCESS_NETWORK%":
-      val = viper.GetString("access-network")
-    case "%ACCESS_USERNAME%":
-      val = viper.GetString("admin-user-name")
-    case "%CLUSTER_NAME%":
-      val = cluster.Name
-    case "%VPC%":
-      val = cluster.Domain.VPC()
-    case "%DOMAIN%":
-      val = cluster.Domain.Prefix()
-    case "%NETWORK_POOL%":
-      val = cluster.Network.NetworkPool()
-    case "%NETWORK_INDEX%":
-      val = cluster.Network.NetworkIndex()
-    case "%PUBLIC_SUBNET%":
-      val = cluster.Network.PublicSubnet()
-    case "%MANAGEMENT_SUBNET%":
-      val = cluster.Network.ManagementSubnet()
-    case "%PRIVATE_SUBNET%":
-      val = cluster.Network.PrivateSubnet()
-    case "%PLACEMENT_GROUP%":
-      val = cluster.Network.PlacementGroup()
-    case "%MASTER_IP%":
-      val = cluster.Master.PrivateIP()
-    case "%PRIVATE_ROUTE_TABLE%":
-      val = cluster.Network.PrivateRouteTable()
-    default:
-      val = value
-    }
-    params = append(params, &cloudformation.Parameter{
-      ParameterKey: aws.String(key),
-      ParameterValue: aws.String(val),
-    })
-  }
-  return params
-}
-
-func createComputeLaunchParameters(cluster *Cluster) []*cloudformation.Parameter {
-  params := []*cloudformation.Parameter{
-    {
-      ParameterKey: aws.String("AccessKeyName"),
-      ParameterValue: aws.String(Config().AccessKeyName),
-    },
-    {
-      ParameterKey: aws.String("ClusterName"),
-      ParameterValue: aws.String(cluster.Name),
-    },
-    {
-      ParameterKey: aws.String("FlightVPC"),
-      ParameterValue: aws.String(cluster.Domain.VPC()),
-    },
-    {
-      ParameterKey: aws.String("FlightDomain"),
-      ParameterValue: aws.String(cluster.Domain.Prefix()),
-    },
-    {
-      ParameterKey: aws.String("FlightNetworkingPool"),
-      ParameterValue: aws.String(cluster.Network.NetworkPool()),
-    },
-    {
-      ParameterKey: aws.String("FlightNetworkingIndex"),
-      ParameterValue: aws.String(cluster.Network.NetworkIndex()),
-    },
-    {
-      ParameterKey: aws.String("FlightSchedulerType"),
-      ParameterValue: aws.String(viper.GetString("scheduler-type")),
-    },
-    {
-      ParameterKey: aws.String("ComputeSpotPrice"),
-      ParameterValue: aws.String(viper.GetString("compute-spot-price")),
-    },
-    {
-      ParameterKey: aws.String("ComputeAutoscalingPolicy"),
-      ParameterValue: aws.String(viper.GetString("compute-autoscaling-policy")),
-    },
-    {
-      ParameterKey: aws.String("ComputeInitialNodes"),
-      ParameterValue: aws.String(viper.GetString("compute-initial-nodes")),
-    },
-    {
-      ParameterKey: aws.String("FlightPrivateSubnet"),
-      ParameterValue: aws.String(cluster.Network.PrivateSubnet()),
-    },
-    {
-      ParameterKey: aws.String("FlightManagementSubnet"),
-      ParameterValue: aws.String(cluster.Network.ManagementSubnet()),
-    },
-    {
-      ParameterKey: aws.String("FlightPlacementGroup"),
-      ParameterValue: aws.String(cluster.Network.PlacementGroup()),
-    },
-    {
-      ParameterKey: aws.String("FlightFeatures"),
-      ParameterValue: aws.String(viper.GetString("compute-features")),
-    },
-    {
-      ParameterKey: aws.String("FlightProfileBucket"),
-      ParameterValue: aws.String(viper.GetString("profile-bucket")),
-    },
-    {
-      ParameterKey: aws.String("FlightProfiles"),
-      ParameterValue: aws.String(viper.GetString("compute-profiles")),
-    },
-    {
-      ParameterKey: aws.String("FlightLoginPrivateIP"),
-      ParameterValue: aws.String(cluster.Master.PrivateIP()),
-    },
-  }
-  instanceType := viper.GetString("compute-instance-override")
-  if instanceType != "" {
-    params = append(params, []*cloudformation.Parameter{
-      {
-        ParameterKey: aws.String("ComputeInstanceType"),
-        ParameterValue: aws.String("other"),
-      },
-      {
-        ParameterKey: aws.String("ComputeInstanceTypeOther"),
-        ParameterValue: aws.String(instanceType),
-      },
-    }...)
-  } else {
-    params = append(params, &cloudformation.Parameter{
-      ParameterKey: aws.String("ComputeInstanceType"),
-      ParameterValue: aws.String(viper.GetString("compute-instance-type")),
-    })
-  }
-  return params
-}
-
-func createSoloLaunchParameters(cluster *Cluster) []*cloudformation.Parameter {
-  masterFeatures := viper.GetString("master-features")
-  params := []*cloudformation.Parameter{
-    {
-      ParameterKey: aws.String("AccessKeyName"),
-      ParameterValue: aws.String(Config().AccessKeyName),
-    },
-    {
-      ParameterKey: aws.String("AccessNetwork"),
-      ParameterValue: aws.String(viper.GetString("access-network")),
-    },
-    {
-      ParameterKey: aws.String("AccessUsername"),
-      ParameterValue: aws.String(viper.GetString("admin-user-name")),
-    },
-    {
-      ParameterKey: aws.String("ClusterName"),
-      ParameterValue: aws.String(cluster.Name),
-    },
-    {
-      ParameterKey: aws.String("FlightFeatures"),
-      ParameterValue: aws.String(masterFeatures),
-    },
-    {
-      ParameterKey: aws.String("FlightProfileBucket"),
-      ParameterValue: aws.String(viper.GetString("profile-bucket")),
-    },
-    {
-      ParameterKey: aws.String("FlightProfiles"),
-      ParameterValue: aws.String(viper.GetString("master-profiles")),
-    },
-    {
-      ParameterKey: aws.String("FlightPreloadSoftware"),
-      ParameterValue: aws.String(viper.GetString("preload-software")),
-    },
-    {
-      ParameterKey: aws.String("FlightSchedulerType"),
-      ParameterValue: aws.String(viper.GetString("scheduler-type")),
-    },
-    {
-      ParameterKey: aws.String("VolumeLayout"),
-      ParameterValue: aws.String(viper.GetString("master-volume-layout")),
-    },
-    {
-      ParameterKey: aws.String("VolumeEncryptionPolicy"),
-      ParameterValue: aws.String(viper.GetString("master-volume-encryption-policy")),
-    },
-    {
-      ParameterKey: aws.String("LoginSystemVolumeSize"),
-      ParameterValue: aws.String(viper.GetString("master-system-volume-size")),
-    },
-    {
-      ParameterKey: aws.String("LoginSystemVolumeType"),
-      ParameterValue: aws.String(viper.GetString("master-system-volume-type")),
-    },
-    {
-      ParameterKey: aws.String("AppsVolumeSize"),
-      ParameterValue: aws.String(viper.GetString("master-apps-volume-size")),
-    },
-    {
-      ParameterKey: aws.String("AppsVolumeType"),
-      ParameterValue: aws.String(viper.GetString("master-apps-volume-type")),
-    },
-    {
-      ParameterKey: aws.String("HomeVolumeSize"),
-      ParameterValue: aws.String(viper.GetString("master-home-volume-size")),
-    },
-    {
-      ParameterKey: aws.String("HomeVolumeType"),
-      ParameterValue: aws.String(viper.GetString("master-home-volume-type")),
-    },
-    {
-      ParameterKey: aws.String("ComputeSpotPrice"),
-      ParameterValue: aws.String(viper.GetString("compute-spot-price")),
-    },
-    {
-      ParameterKey: aws.String("ComputeAutoscalingPolicy"),
-      ParameterValue: aws.String(viper.GetString("compute-autoscaling-policy")),
-    },
-    {
-      ParameterKey: aws.String("ComputeInitialNodes"),
-      ParameterValue: aws.String(viper.GetString("compute-initial-nodes")),
-    },
-  }
-  instanceType := viper.GetString("master-instance-override")
-  if instanceType != "" {
-    params = append(params, []*cloudformation.Parameter{
-      {
-        ParameterKey: aws.String("LoginInstanceType"),
-        ParameterValue: aws.String("other"),
-      },
-      {
-        ParameterKey: aws.String("LoginInstanceTypeOther"),
-        ParameterValue: aws.String(instanceType),
-      },
-    }...)
-  } else {
-    params = append(params, &cloudformation.Parameter{
-      ParameterKey: aws.String("LoginInstanceType"),
-      ParameterValue: aws.String(viper.GetString("master-instance-type")),
-    })
-  }
-  instanceType = viper.GetString("compute-instance-override")
-  if instanceType != "" {
-    params = append(params, []*cloudformation.Parameter{
-      {
-        ParameterKey: aws.String("ComputeInstanceType"),
-        ParameterValue: aws.String("other"),
-      },
-      {
-        ParameterKey: aws.String("ComputeInstanceTypeOther"),
-        ParameterValue: aws.String(instanceType),
-      },
-    }...)
-  } else {
-    params = append(params, &cloudformation.Parameter{
-      ParameterKey: aws.String("ComputeInstanceType"),
-      ParameterValue: aws.String(viper.GetString("compute-instance-type")),
-    })
   }
   return params
 }

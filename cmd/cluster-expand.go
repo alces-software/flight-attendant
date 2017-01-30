@@ -29,53 +29,39 @@
 package cmd
 
 import (
-	"fmt"
+  "fmt"
   
-	"github.com/spf13/cobra"
+  "github.com/spf13/cobra"
 
-	"github.com/alces-software/flight-attendant/attendant"
+  "github.com/alces-software/flight-attendant/attendant"
 )
 
 // launchCmd represents the launch command
 var clusterExpandCmd = &cobra.Command{
-	Use:   "expand <cluster> <component>",
-	Short: "Expand running Flight Compute clusters",
-	Long: `Expand running Flight Compute clusters.`,
-	Run: func(cmd *cobra.Command, args []string) {
-		if len(args) <= 1 {
-			cmd.Help()
-			return
-		}
+  Use:   "expand <cluster> <component>",
+  Short: "Expand running Flight Compute clusters",
+  Long: `Expand running Flight Compute clusters.`,
+  SilenceUsage: true,
+  RunE: func(cmd *cobra.Command, args []string) error {
+    if len(args) <= 1 {
+      cmd.Help()
+      return nil
+    }
 
     var domain *attendant.Domain
     var err error
 
     domain, err = findDomain("clusterExpand", false)
-    if err != nil {
-      fmt.Println(err.Error())
-      return
-    }
+    if err != nil { return err }
 
     componentName, err := cmd.Flags().GetString("name")
-    if err != nil {
-      fmt.Println(err.Error())
-      return
-    }
+    if err != nil { return err }
     componentParamsFile, err := cmd.Flags().GetString("params")
-    if err != nil {
-      fmt.Println(err.Error())
-      return
-    }
+    if err != nil { return err }
 
-    if err := setupTemplateSource("clusterExpand"); err != nil {
-      fmt.Println(err.Error())
-      return
-    }
+    if err := setupTemplateSource("clusterExpand"); err != nil { return err }
 
-    if err := setupKeyPair("clusterExpand"); err != nil {
-      fmt.Println(err.Error())
-      return
-    }
+    if err := setupKeyPair("clusterExpand"); err != nil { return err }
 
     if componentName == "" {
       fmt.Printf("Expanding cluster '%s' in domain '%s' (%s) with '%s'...\n\n", args[0], domain.Name, attendant.Config().AwsRegion, args[1])
@@ -83,16 +69,14 @@ var clusterExpandCmd = &cobra.Command{
       fmt.Printf("Expanding cluster '%s' in domain '%s' (%s) with '%s (%s)'...\n\n", args[0], domain.Name, attendant.Config().AwsRegion, args[1], componentName)
     }
     err = expandCluster(domain, args[0], args[1], componentName, componentParamsFile)
-    if err != nil {
-      fmt.Println(err.Error())
-      return
-    }
+    if err != nil { return err }
     fmt.Println("\nCluster expanded.\n")
-	},
+    return nil
+  },
 }
 
 func init() {
-	clusterCmd.AddCommand(clusterExpandCmd)
+  clusterCmd.AddCommand(clusterExpandCmd)
   addDomainFlag(clusterExpandCmd, "clusterExpand")
   addKeyPairFlag(clusterExpandCmd, "clusterExpand")
   addTemplateSetFlag(clusterExpandCmd, "clusterExpand")

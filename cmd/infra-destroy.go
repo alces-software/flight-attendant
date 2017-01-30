@@ -29,46 +29,39 @@
 package cmd
 
 import (
-	"fmt"
+  "fmt"
 
-	"github.com/spf13/cobra"
+  "github.com/spf13/cobra"
 
-	"github.com/alces-software/flight-attendant/attendant"
+  "github.com/alces-software/flight-attendant/attendant"
 )
 
 // destroyCmd represents the destroy command
 var infraDestroyCmd = &cobra.Command{
-	Use:   "destroy <appliance>",
-	Short: "Destroy a running infrastructure appliance",
-	Long: `Destroy a running infrastructure appliance.`,
-	Run: func(cmd *cobra.Command, args []string) {
+  Use:   "destroy <appliance>",
+  Short: "Destroy a running infrastructure appliance",
+  Long: `Destroy a running infrastructure appliance.`,
+  SilenceUsage: true,
+  RunE: func(cmd *cobra.Command, args []string) error {
     all, _ := cmd.Flags().GetBool("all")
     if !all {
       if len(args) == 0 {
         cmd.Help()
-        return
+        return nil
       } else if ! attendant.IsValidApplianceType(args[0]) {
-        fmt.Printf("Unknown appliance type: %s\n", args[0])
-        return
+        return fmt.Errorf("Unknown appliance type: %s\n", args[0])
       }
-		}
+    }
 
     domain, err := findDomain("infraDestroy", false)
-    if err != nil {
-      fmt.Println(err.Error())
-      return
-    }
+    if err != nil { return err }
 
     var status *attendant.DomainStatus
     attendant.Spin(func() { status, err = domain.Status() })
-    if err != nil {
-      fmt.Println(err.Error())
-      return
-    }
+    if err != nil { return err }
 
     if len(status.Clusters) > 0 {
-      fmt.Printf("Unable to destroy infrastructure appliance while domain '%s' has running clusters.\n", domain.Name)
-      return
+      return fmt.Errorf("Unable to destroy infrastructure appliance while domain '%s' has running clusters.\n", domain.Name)
     }
 
     if all {
@@ -83,15 +76,13 @@ var infraDestroyCmd = &cobra.Command{
       err = destroyAppliance(domain, args[0])
       if err == nil { fmt.Println("\nAppliance destroyed.") }
     }
-    if err != nil {
-      fmt.Println(err.Error())
-      return
-    }
-	},
+    if err != nil { return err }
+    return nil
+  },
 }
 
 func init() {
-	infraCmd.AddCommand(infraDestroyCmd)
+  infraCmd.AddCommand(infraDestroyCmd)
   addDomainFlag(infraDestroyCmd, "infraDestroy")
   infraDestroyCmd.Flags().BoolP("all", "a", false, "Destroy all infrastructure appliances in the domain")
 }

@@ -239,6 +239,32 @@ func destroyStack(svc *cloudformation.CloudFormation, stackName string) error {
   return nil
 }
 
+func destroyDetachedNICs(subnetId string) error {
+  svc, err := EC2()
+  if err != nil { return err }
+  // list NICs for subnet
+  resp, err := svc.DescribeNetworkInterfaces(&ec2.DescribeNetworkInterfacesInput{
+    Filters: []*ec2.Filter{
+      &ec2.Filter{
+        Name: aws.String("subnet-id"),
+        Values: []*string{aws.String(subnetId)},
+      },
+      &ec2.Filter{
+        Name: aws.String("attachment.status"),
+        Values: []*string{aws.String("detached")},
+      },
+    },
+  })
+  if err != nil { return err }
+  for _, nic := range resp.NetworkInterfaces {
+    _, err := svc.DeleteNetworkInterface(&ec2.DeleteNetworkInterfaceInput{
+      NetworkInterfaceId: nic.NetworkInterfaceId,
+    })
+    if err != nil { return err }
+  }
+  return nil
+}
+
 func getStack(svc *cloudformation.CloudFormation, stackName string) (*cloudformation.Stack, error) {
   stackParams := &cloudformation.DescribeStacksInput{StackName: aws.String(stackName)}
 
@@ -276,6 +302,29 @@ func getStackOutput(stack *cloudformation.Stack, key string) string {
     if *output.OutputKey == key {
       v = *output.OutputValue
       break
+    }
+  }
+  return v
+}
+
+func getStackConfigValue(stack *cloudformation.Stack, key string) string {
+  var v string
+  configResult := getStackOutput(stack, "ConfigurationResult")
+  if configResult != "" {
+    configData := strings.Split(strings.Split(configResult, "\"")[3],";")
+    for _, configDatum := range configData {
+      configTuple := strings.Split(configDatum, ":")
+      if len(configTuple) == 1 {
+        configTuple = strings.Split(configDatum, "=")
+      }
+      if configTuple[0] == key {
+        if len(configTuple) == 1 {
+          v = "true"
+        } else {
+          v = strings.TrimSpace(configTuple[1])
+        }
+        break
+      }
     }
   }
   return v
@@ -325,10 +374,14 @@ func eachRunningStackAll(fn func(stack *cloudformation.Stack)) error {
       })
     }
     getter()
-    if err != nil && strings.HasPrefix(err.Error(), "Throttling: Rate exceeded") {
-      getter()
-    } else if err != nil {
-      return err
+    if err != nil {
+      if strings.HasPrefix(err.Error(), "Throttling: Rate exceeded") {
+        getter()
+      } else if strings.HasPrefix(err.Error(), "AccessDenied") {
+        continue
+      } else {
+        return err
+      }
     }
     fn(stacksResp.Stacks[0])
   }
@@ -355,7 +408,13 @@ func eachRunningStack(fn func(stack *cloudformation.Stack)) error {
 			stacksResp, err := svc.DescribeStacks(&cloudformation.DescribeStacksInput{
 				StackName: value.StackName,
 			})
-			if err != nil { return err }
+      if err != nil {
+        if strings.HasPrefix(err.Error(), "AccessDenied") {
+          continue
+        } else {
+          return err
+        }
+      }
       fn(stacksResp.Stacks[0])
 		}
 	}

@@ -92,12 +92,10 @@ func (a *Appliance) Create() error {
 
   var launchParams []*cloudformation.Parameter
   switch a.Name {
-  case "directory":
-    launchParams = createDomainApplianceLaunchParameters(a.Domain, "directory")
-  case "monitor":
-    launchParams = createDomainApplianceLaunchParameters(a.Domain, "monitor")
+  case "directory", "monitor":
+    launchParams = createApplianceLaunchParameters(a, loadParameterSet(a.Name, DomainApplianceParameters))
   case "access-manager", "storage-manager":
-    launchParams = createApplianceLaunchParameters(a)
+    launchParams = createApplianceLaunchParameters(a, loadParameterSet(a.Name, BasicApplianceParameters))
   default:
     return fmt.Errorf("Appliance unsupported: %s", a.Name)
   }
@@ -154,7 +152,11 @@ func (a Appliance) GetDetails() string {
     ip := getStackOutput(a.Stack, "DirectoryAccessIP")
     keypair := getStackParameter(a.Stack, "AccessKeyName")
     url := getStackOutput(a.Stack, "DirectoryWebAccess")
-    otherData := strings.Split(strings.Split(getStackOutput(a.Stack, "ConfigurationResult"), "\"")[3],";")
+    configData := strings.Split(getStackOutput(a.Stack, "ConfigurationResult"), "\"")
+    var otherData []string
+    if len(configData) > 3 {
+      otherData = strings.Split(configData[3],";")
+    }
     otherDetails := ""
     for _, otherDatum := range otherData {
       otherDetails += strings.TrimSpace(otherDatum) + "\n"
@@ -164,7 +166,11 @@ func (a Appliance) GetDetails() string {
     ip := getStackOutput(a.Stack, "MonitorAccessIP")
     keypair := getStackParameter(a.Stack, "AccessKeyName")
     url := getStackOutput(a.Stack, "MonitorWebAccess")
-    otherData := strings.Split(strings.Split(getStackOutput(a.Stack, "ConfigurationResult"), "\"")[3],";")
+    configData := strings.Split(getStackOutput(a.Stack, "ConfigurationResult"), "\"")
+    var otherData []string
+    if len(configData) > 3 {
+      otherData = strings.Split(configData[3],";")
+    }
     otherDetails := ""
     for _, otherDatum := range otherData {
       otherDetails += strings.TrimSpace(otherDatum) + "\n"
@@ -180,95 +186,51 @@ func (a Appliance) GetDetails() string {
   return details
 }
 
-func createDomainApplianceLaunchParameters(domain *Domain, applianceType string) []*cloudformation.Parameter {
-  instanceType := viper.GetString(applianceType + "-instance-type")
-  if instanceType == "" { instanceType = viper.GetString("appliance-instance-type") }
-  if instanceType == "" { instanceType = ApplianceInstanceTypes[0] }
-
-  params := []*cloudformation.Parameter{
-    {
-      ParameterKey: aws.String("AccessKeyName"),
-      ParameterValue: aws.String(Config().AccessKeyName),
-    },
-    {
-      ParameterKey: aws.String("AccessNetwork"),
-      ParameterValue: aws.String(viper.GetString("access-network")),
-    },
-    {
-      ParameterKey: aws.String("FlightProfileBucket"),
-      ParameterValue: aws.String(viper.GetString("profile-bucket")),
-    },
-    {
-      ParameterKey: aws.String("FlightProfiles"),
-      ParameterValue: aws.String(viper.GetString(applianceType + "-profiles")),
-    },
-    {
-      ParameterKey: aws.String("ApplianceInstanceType"),
-      ParameterValue: aws.String(instanceType),
-    },
-    {
-      ParameterKey: aws.String("FlightDomain"),
-      ParameterValue: aws.String(domain.Prefix()),
-    },
-    {
-      ParameterKey: aws.String("FlightVPC"),
-      ParameterValue: aws.String(domain.VPC()),
-    },
-    {
-      ParameterKey: aws.String("FlightPublicSubnet"),
-      ParameterValue: aws.String(domain.PublicSubnet()),
-    },
-    {
-      ParameterKey: aws.String("FlightManagementSubnet"),
-      ParameterValue: aws.String(domain.ManagementSubnet()),
-    },
-  }
-  return params
-}
-
-func createApplianceLaunchParameters(appliance *Appliance) []*cloudformation.Parameter {
-  instanceType := viper.GetString(appliance.Name + "-instance-type")
-  if instanceType == "" { instanceType = viper.GetString("appliance-instance-type") }
-  if instanceType == "" { instanceType = ApplianceInstanceTypes[0] }
-  domain := appliance.Domain
-
-  params := []*cloudformation.Parameter{
-    {
-      ParameterKey: aws.String("AccessKeyName"),
-      ParameterValue: aws.String(Config().AccessKeyName),
-    },
-    {
-      ParameterKey: aws.String("AccessNetwork"),
-      ParameterValue: aws.String(viper.GetString("access-network")),
-    },
-    {
-      ParameterKey: aws.String("FlightProfileBucket"),
-      ParameterValue: aws.String(viper.GetString("profile-bucket")),
-    },
-    {
-      ParameterKey: aws.String("FlightProfiles"),
-      ParameterValue: aws.String(viper.GetString(appliance.Name + "-profiles")),
-    },
-    {
-      ParameterKey: aws.String("ApplianceInstanceType"),
-      ParameterValue: aws.String(instanceType),
-    },
-    {
-      ParameterKey: aws.String("FlightDomain"),
-      ParameterValue: aws.String(domain.Prefix()),
-    },
-    {
-      ParameterKey: aws.String("FlightVPC"),
-      ParameterValue: aws.String(domain.VPC()),
-    },
-    {
-      ParameterKey: aws.String("FlightPublicSubnet"),
-      ParameterValue: aws.String(domain.PublicSubnet()),
-    },
-    {
-      ParameterKey: aws.String("FlightFeatures"),
-      ParameterValue: aws.String(viper.GetString(appliance.Name + "-features")),
-    },
+func createApplianceLaunchParameters(appliance *Appliance, parameterSet map[string]string) []*cloudformation.Parameter {
+  params := []*cloudformation.Parameter{}
+  for key, value := range parameterSet {
+    var val string
+    switch value  {
+    case "%ACCESS_KEY_NAME%":
+      val = Config().AccessKeyName
+    case "%VPC%":
+      val = appliance.Domain.VPC()
+    case "%DOMAIN%":
+      val = appliance.Domain.Prefix()
+    case "%PUB_SUBNET%":
+      val = appliance.Domain.PublicSubnet()
+    case "%MGT_SUBNET%":
+      val = appliance.Domain.ManagementSubnet()
+    case "%PRV_SUBNET%":
+      val = appliance.Domain.PrivateSubnet()
+    case "%PLACEMENT_GROUP%":
+      val = appliance.Domain.PlacementGroup()
+    case "%APPLIANCE_FEATURES%":
+      val = viper.GetString(appliance.Name + "-features")
+    case "%APPLIANCE_PROFILES%":
+      val = viper.GetString(appliance.Name + "-profiles")
+    case "%APPLIANCE_INSTANCE_TYPE%":
+      val = viper.GetString(appliance.Name + "-instance-type")
+      if val == "" { val = viper.GetString("appliance-instance-type") }
+      if val == "" { val = ApplianceInstanceTypes[0] }
+    default:
+      if strings.HasPrefix(value, "%") && strings.HasSuffix(value, "%") {
+        configKey := strings.ToLower(strings.Replace(value[1:len(value)-1], "_", "-", -1))
+        if viper.IsSet(configKey) {
+          val = viper.GetString(configKey)
+        } else {
+          val = "%NULL%"
+        }
+      } else {
+        val = value
+      }
+    }
+    if val != "%NULL%" {
+      params = append(params, &cloudformation.Parameter{
+        ParameterKey: aws.String(key),
+        ParameterValue: aws.String(val),
+      })
+    }
   }
   return params
 }

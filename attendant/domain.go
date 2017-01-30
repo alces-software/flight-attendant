@@ -38,7 +38,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/cloudformation"
 )
 
-var DomainResourceCount int = 34
+var DomainResourceCount int = 35
 
 type Domain struct {
   Name string
@@ -72,19 +72,23 @@ func (d *Domain) VPC() string {
 }
 
 func (d *Domain) PublicSubnet() string {
-  return d.getOutput("FlightPublicSubnet")
+  return d.getOutput("PubSubnet")
 }
 
 func (d *Domain) ManagementSubnet() string {
-  return d.getOutput("FlightManagementSubnet")
+  return d.getOutput("MgtSubnet")
+}
+
+func (d *Domain) PrivateSubnet() string {
+  return d.getOutput("PrvSubnet")
+}
+
+func (d *Domain) PlacementGroup() string {
+  return d.getOutput("PlacementGroup")
 }
 
 func (d *Domain) PublicRouteTable() string {
-  return d.getOutput("FlightPublicRouteTable")
-}
-
-func (d *Domain) PrivateRouteTable() string {
-  return d.getOutput("FlightPrivateRouteTable")
+  return d.getOutput("PubRouteTable")
 }
 
 func (d *Domain) getOutput(key string) string {
