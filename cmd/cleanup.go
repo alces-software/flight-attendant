@@ -32,16 +32,17 @@ import (
   "fmt"
   "strings"
   
-	"github.com/spf13/cobra"
-	"github.com/alces-software/flight-attendant/attendant"
+  "github.com/spf13/cobra"
+  "github.com/alces-software/flight-attendant/attendant"
 )
 
 // clusterCmd represents the cluster command
 var cleanupCmd = &cobra.Command{
-	Use:   "cleanup",
-	Short: "Clean up Alces Flight resources",
-	Long: `Clean up Alces Flight resources.`,
-	Run: func(cmd *cobra.Command, args []string) {
+  Use:   "cleanup",
+  Short: "Clean up Alces Flight resources",
+  Long: `Clean up Alces Flight resources.`,
+  SilenceUsage: true,
+  RunE: func(cmd *cobra.Command, args []string) error {
     var domains []attendant.Domain
     var err error
     regions := getRegions(cmd)
@@ -50,18 +51,12 @@ var cleanupCmd = &cobra.Command{
       attendant.SpinWithSuffix(func() {
         domains, err = attendant.AllDomains()
       }, region)
-      if err != nil {
-        fmt.Println(err.Error())
-        return
-      }
+      if err != nil { return err }
       var stacks = []string{}
       for _, domain := range domains {
         var status *attendant.DomainStatus
         attendant.SpinWithSuffix(func() { status, err = domain.Status() }, region + ": " + domain.Name)
-        if err != nil {
-          fmt.Println(err.Error())
-          return
-        }
+        if err != nil { return err }
         stacks = append(stacks, "flight-" + domain.Name)
         // list all topics, subscriptions, queues and remove any that aren't accounted for
         for _, cluster := range status.Clusters {
@@ -73,10 +68,7 @@ var cleanupCmd = &cobra.Command{
       }
       var soloStatus *attendant.DomainStatus
       attendant.SpinWithSuffix(func() { soloStatus, err = attendant.SoloStatus() }, region + " (Solo)")
-      if err != nil {
-        fmt.Println(err.Error())
-        return
-      }
+      if err != nil { return err }
       for _, cluster := range soloStatus.Clusters {
         stacks = append(stacks, "flight-cluster-" + cluster.Name)
       }
@@ -90,18 +82,16 @@ var cleanupCmd = &cobra.Command{
         }
         dryrun, _ := cmd.Flags().GetBool("dry-run")
         attendant.SpinWithSuffix(func() { err = attendant.CleanFlightEventHandling(stacks, dryrun, handler) }, region)
-        if err != nil {
-          fmt.Println(err.Error())
-          return
-        }
+        if err != nil { return err }
         fmt.Println("")
       }
     }
+    return nil
   },
 }
 
 func init() {
-	RootCmd.AddCommand(cleanupCmd)
+  RootCmd.AddCommand(cleanupCmd)
   cleanupCmd.Flags().Bool("dry-run", false, "Perform a dry run displaying what resources would be cleaned")
   cleanupCmd.Flags().String("regions", "", "Select regions to query")
 }

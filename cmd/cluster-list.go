@@ -29,21 +29,22 @@
 package cmd
 
 import (
-	"fmt"
+  "fmt"
   "strings"
   
-	"github.com/spf13/cobra"
-	"github.com/aws/aws-sdk-go/service/cloudformation"
+  "github.com/spf13/cobra"
+  "github.com/aws/aws-sdk-go/service/cloudformation"
   
-	"github.com/alces-software/flight-attendant/attendant"
+  "github.com/alces-software/flight-attendant/attendant"
 )
 
 // launchCmd represents the launch command
 var clusterListCmd = &cobra.Command{
-	Use:   "list",
-	Short: "List running Flight Compute clusters",
-	Long: `List running Flight Compute clusters.`,
-	Run: func(cmd *cobra.Command, args []string) {
+  Use:   "list",
+  Short: "List running Flight Compute clusters",
+  Long: `List running Flight Compute clusters.`,
+  SilenceUsage: true,
+  RunE: func(cmd *cobra.Command, args []string) error {
     var status *attendant.DomainStatus
     var domains []attendant.Domain
     var err error
@@ -61,21 +62,12 @@ var clusterListCmd = &cobra.Command{
             attendant.SpinWithSuffix(func() {
               domains, err = attendant.AllDomains()
             }, region)
-          } else {
-            fmt.Println(err.Error())
-            return
-          }
+          } else { return err }
         }
-        if err != nil {
-          fmt.Println(err.Error())
-          return
-        }
+        if err != nil { return err }
         for _, domain := range domains {
           attendant.SpinWithSuffix(func() { status, err = domain.Status() }, region + ": " + domain.Name)
-          if err != nil {
-            fmt.Println(err.Error())
-            return
-          }
+          if err != nil { return err }
           fmt.Printf("== Clusters in '%s' (%s) ==\n", domain.Name, attendant.Config().AwsRegion)
           printClusters(status)
           fmt.Println("")
@@ -83,10 +75,7 @@ var clusterListCmd = &cobra.Command{
       }
       if solo || all {
         attendant.SpinWithSuffix(func() { status, err = attendant.SoloStatus() }, region + " (Solo)")
-        if err != nil {
-          fmt.Println(err.Error())
-          return
-        }
+        if err != nil { return err }
         if len(status.Clusters) > 0 {
           fmt.Printf("== Solo Clusters (%s) ==\n", attendant.Config().AwsRegion)
           printClusters(status)
@@ -95,10 +84,7 @@ var clusterListCmd = &cobra.Command{
         if all {
           var others []*cloudformation.Stack
           attendant.SpinWithSuffix(func() { others, err = attendant.OtherStacks() }, region + " (Other resources)")
-          if err != nil {
-            fmt.Println(err.Error())
-            return
-          }
+          if err != nil { return err }
           if len(others) > 0 {
             fmt.Printf("== Other resources (%s) ==\n", attendant.Config().AwsRegion)
             for _, stack := range others {
@@ -123,11 +109,12 @@ var clusterListCmd = &cobra.Command{
         }
       }
     }
-	},
+    return nil
+  },
 }
 
 func init() {
-	clusterCmd.AddCommand(clusterListCmd)
+  clusterCmd.AddCommand(clusterListCmd)
   addDomainFlag(clusterListCmd, "clusterList")
   clusterListCmd.Flags().BoolP("solo", "s", false, "List Flight Compute Solo clusters")
   clusterListCmd.Flags().BoolP("all", "a", false, "List Flight Compute Enterprise and Solo clusters")

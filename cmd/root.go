@@ -29,72 +29,63 @@
 package cmd
 
 import (
-	"fmt"
-	"os"
-	"strings"
+  "fmt"
+  "os"
+  "strings"
 
-	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
+  "github.com/spf13/cobra"
+  "github.com/spf13/viper"
 
-	"github.com/alces-software/flight-attendant/attendant"
+  "github.com/alces-software/flight-attendant/attendant"
 )
 
 var cfgFile string
 
 // RootCmd represents the base command when called without any subcommands
 var RootCmd = &cobra.Command{
-	Use:   "fly",
-	Short: "Helper utility for lauching Alces Flight Enterprise clusters",
-	Long: `Alces Flight Attendant is a command-line helper utility that makes it
+  Use:   "fly",
+  Short: "Helper utility for lauching Alces Flight Enterprise clusters",
+  Long: `Alces Flight Attendant is a command-line helper utility that makes it
 quick and easy to launch Alces Flight enterprise infrastructure
 appliances, launch and manage clusters and get status information
 on your Alces Flight Compute architecture.`,
 // Uncomment the following line if your bare application
-// has an action associated with it:
-	Run: func(cmd *cobra.Command, args []string) {
+  // has an action associated with it:
+  SilenceUsage: true,
+  RunE: func(cmd *cobra.Command, args []string) error {
     if v, _ := cmd.Flags().GetBool("version"); v {
       fmt.Printf("Flight Attendant v%s %s (Flight Compute %s)\n", attendant.Version, attendant.ReleaseDate, attendant.FlightRelease)
-      return
     } else if v, _ := cmd.Flags().GetBool("show-config-example"); v {
       cfg, err := attendant.RenderConfig()
-      if err != nil {
-        fmt.Println(err.Error())
-        return
-      }
+      if err != nil { return err }
       fmt.Println(string(cfg))
     } else if v, _ := cmd.Flags().GetBool("show-config-values"); v {
       cfg, err := attendant.RenderConfigValues()
-      if err != nil {
-        fmt.Println(err.Error())
-        return
-      }
+      if err != nil { return err }
       fmt.Println(cfg)
     } else if v, _ := cmd.Flags().GetString("create-parameter-directory"); v != "" {
       err := attendant.CreateParameterDirectory(v)
-      if err != nil {
-        fmt.Println(err.Error())
-        return
-      }
+      if err != nil { return err }
     } else {
-			cmd.Help()
-			return
+      cmd.Help()
     }
+    return nil
   },
 }
 
 // Execute adds all child commands to the root command sets flags appropriately.
 // This is called by main.main(). It only needs to happen once to the rootCmd.
 func Execute() {
-	if err := RootCmd.Execute(); err != nil {
-		fmt.Println(err)
-		os.Exit(-1)
-	}
+  if err := RootCmd.Execute(); err != nil {
+    // fmt.Println(err.Error())
+    os.Exit(-255)
+  }
 }
 
 func init() {
-	cobra.OnInitialize(initConfig)
+  cobra.OnInitialize(initConfig)
   attendant.Init()
-	RootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.fly.yml)")
+  RootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.fly.yml)")
   defaultRegion := os.Getenv("AWS_REGION")
   if defaultRegion == "" { defaultRegion = "us-east-1" }
   RootCmd.Flags().Bool("version", false, "Show version information")
@@ -118,23 +109,23 @@ func init() {
 
 // initConfig reads in config file and ENV variables if set.
 func initConfig() {
-	viper.SetConfigName(".fly") // name of config file (without extension)
-	viper.AddConfigPath("$HOME")  // adding home directory as first search path
+  viper.SetConfigName(".fly") // name of config file (without extension)
+  viper.AddConfigPath("$HOME")  // adding home directory as first search path
   viper.SetEnvPrefix("FLY")
   replacer := strings.NewReplacer("-", "_")
   viper.SetEnvKeyReplacer(replacer)
-	viper.AutomaticEnv()          // read in environment variables that match
+  viper.AutomaticEnv()          // read in environment variables that match
 
-	if cfgFile != "" { // enable ability to specify config file via flag
-		viper.SetConfigFile(cfgFile)
-	} else if os.Getenv("FLY_CONFIG") != "" {
+  if cfgFile != "" { // enable ability to specify config file via flag
+    viper.SetConfigFile(cfgFile)
+  } else if os.Getenv("FLY_CONFIG") != "" {
     viper.SetConfigFile(os.Getenv("FLY_CONFIG"))
   }
 
-	// If a config file is found, read it in.
-	if err := viper.ReadInConfig(); err == nil {
-		//fmt.Println("Using config file:", viper.ConfigFileUsed())
-	}
+  // If a config file is found, read it in.
+  if err := viper.ReadInConfig(); err == nil {
+    //fmt.Println("Using config file:", viper.ConfigFileUsed())
+  }
 
   cfg := attendant.Config()
   cfg.AwsRegion = viper.GetString("region")
