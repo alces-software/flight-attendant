@@ -29,38 +29,33 @@
 package cmd
 
 import (
-	"fmt"
+  "fmt"
   
-	"github.com/spf13/cobra"
+  "github.com/spf13/cobra"
 
-	"github.com/alces-software/flight-attendant/attendant"
+  "github.com/alces-software/flight-attendant/attendant"
 )
 
 // launchCmd represents the launch command
 var clusterReduceCmd = &cobra.Command{
-	Use:   "reduce <cluster> <component>",
-	Short: "Reduce running Flight Compute clusters",
-	Long: `Reduce running Flight Compute clusters.`,
-	Run: func(cmd *cobra.Command, args []string) {
-		if len(args) <= 1 {
-			cmd.Help()
-			return
-		}
+  Use:   "reduce <cluster> <component>",
+  Short: "Reduce running Flight Compute clusters",
+  Long: `Reduce running Flight Compute clusters.`,
+  SilenceUsage: true,
+  RunE: func(cmd *cobra.Command, args []string) error {
+    if len(args) <= 1 {
+      cmd.Help()
+      return nil
+    }
 
     var domain *attendant.Domain
     var err error
 
     domain, err = findDomain("clusterReduce", false)
-    if err != nil {
-      fmt.Println(err.Error())
-      return
-    }
+    if err != nil { return err }
 
     componentName, err := cmd.Flags().GetString("name")
-    if err != nil {
-      fmt.Println(err.Error())
-      return
-    }
+    if err != nil { return err }
 
     if componentName == "" {
       fmt.Printf("Reducing cluster '%s' in domain '%s' (%s) with '%s'...\n\n", args[0], domain.Name, attendant.Config().AwsRegion, args[1])
@@ -68,16 +63,14 @@ var clusterReduceCmd = &cobra.Command{
       fmt.Printf("Reducing cluster '%s' in domain '%s' (%s) with '%s (%s)'...\n\n", args[0], domain.Name, attendant.Config().AwsRegion, args[1], componentName)
     }
     err = reduceCluster(domain, args[0], args[1], componentName)
-    if err != nil {
-      fmt.Println(err.Error())
-      return
-    }
+    if err != nil { return err }
     fmt.Println("\nCluster reduced.\n")
-	},
+    return nil
+  },
 }
 
 func init() {
-	clusterCmd.AddCommand(clusterReduceCmd)
+  clusterCmd.AddCommand(clusterReduceCmd)
   addDomainFlag(clusterReduceCmd, "clusterReduce")
   clusterReduceCmd.Flags().StringP("name", "n", "", "Provide the name of the component")
 }

@@ -29,23 +29,24 @@
 package cmd
 
 import (
-	"fmt"
+  "fmt"
 
-	"github.com/spf13/cobra"
+  "github.com/spf13/cobra"
 
-	"github.com/alces-software/flight-attendant/attendant"
+  "github.com/alces-software/flight-attendant/attendant"
 )
 
 // destroyCmd represents the destroy command
 var clusterDestroyCmd = &cobra.Command{
-	Use:   "destroy <cluster>",
-	Short: "Destroy a running cluster",
-	Long: `Destroy a running cluster.`,
-	Run: func(cmd *cobra.Command, args []string) {
-		if len(args) == 0 {
-			cmd.Help()
-			return
-		}
+  Use:   "destroy <cluster>",
+  Short: "Destroy a running cluster",
+  Long: `Destroy a running cluster.`,
+  SilenceUsage: true,
+  RunE: func(cmd *cobra.Command, args []string) error {
+    if len(args) == 0 {
+      cmd.Help()
+      return nil
+    }
 
     var domain *attendant.Domain
     var err error
@@ -55,24 +56,19 @@ var clusterDestroyCmd = &cobra.Command{
       domain = nil
     } else {
       domain, err = findDomain("clusterDestroy", false)
-      if err != nil {
-        fmt.Println(err.Error())
-        return
-      }
+      if err != nil { return err }
 
       fmt.Printf("Destroying cluster '%s' in domain '%s' (%s)...\n\n", args[0], domain.Name, attendant.Config().AwsRegion)
     }
     err = destroyCluster(domain, args[0])
-    if err != nil {
-      fmt.Println(err.Error())
-      return
-    }
+    if err != nil { return err }
     fmt.Println("\nCluster destroyed.")
-	},
+    return nil
+  },
 }
 
 func init() {
-	clusterCmd.AddCommand(clusterDestroyCmd)
+  clusterCmd.AddCommand(clusterDestroyCmd)
   clusterDestroyCmd.Flags().BoolP("solo", "s", false, "Destroy Flight Compute Solo cluster")
   addDomainFlag(clusterDestroyCmd, "clusterDestroy")
 }

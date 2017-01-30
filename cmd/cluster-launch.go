@@ -29,50 +29,42 @@
 package cmd
 
 import (
-	"fmt"
+  "fmt"
 
-	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
+  "github.com/spf13/cobra"
+  "github.com/spf13/viper"
 
-	"github.com/alces-software/flight-attendant/attendant"
+  "github.com/alces-software/flight-attendant/attendant"
 )
 
 // launchCmd represents the launch command
 var clusterLaunchCmd = &cobra.Command{
-	Use:   "launch <name>",
-	Short: "Launch a Flight Compute cluster",
-	Long: `Launch a Flight Compute cluster.`,
-	Run: func(cmd *cobra.Command, args []string) {
-		if len(args) == 0 {
-			cmd.Help()
-			return
-		}
+  Use:   "launch <name>",
+  Short: "Launch a Flight Compute cluster",
+  Long: `Launch a Flight Compute cluster.`,
+  SilenceUsage: true,
+  RunE: func(cmd *cobra.Command, args []string) error {
+    if len(args) == 0 {
+      cmd.Help()
+      return nil
+    }
 
     masterInstanceType := viper.GetString("master-instance-type")
     if masterInstanceType != "" {
       if ! attendant.IsValidMasterInstanceType(masterInstanceType) {
-        fmt.Printf("Invalid master instance type '%s'. Try one of: %s\n", masterInstanceType, attendant.MasterInstanceTypes)
-        return
+        return fmt.Errorf("Invalid master instance type '%s'. Try one of: %s\n", masterInstanceType, attendant.MasterInstanceTypes)
       }
     }
 
     computeInstanceType := viper.GetString("compute-instance-type")
     if computeInstanceType != "" {
       if ! attendant.IsValidComputeInstanceType(computeInstanceType) {
-        fmt.Printf("Invalid compute instance type '%s'. Try one of: %s\n", computeInstanceType, attendant.ComputeInstanceTypes)
-        return
+        return fmt.Errorf("Invalid compute instance type '%s'. Try one of: %s\n", computeInstanceType, attendant.ComputeInstanceTypes)
       }
     }
 
-    if err := setupTemplateSource("clusterLaunch"); err != nil {
-      fmt.Println(err.Error())
-      return
-    }
-
-    if err := setupKeyPair("clusterLaunch"); err != nil {
-      fmt.Println(err.Error())
-      return
-    }
+    if err := setupTemplateSource("clusterLaunch"); err != nil { return err }
+    if err := setupKeyPair("clusterLaunch"); err != nil { return err }
 
     var cluster *attendant.Cluster
     var domain *attendant.Domain
@@ -83,32 +75,27 @@ var clusterLaunchCmd = &cobra.Command{
       domain = nil
     } else {
       domain, err = findDomain("clusterLaunch", true)
-      if err != nil {
-        fmt.Println(err.Error())
-        return
-      }
+      if err != nil { return err }
 
       if err = domain.AssertReady(); err != nil {
-        fmt.Println("Domain is not ready: " + domain.Name)
-        return
+        return fmt.Errorf("Domain is not ready: " + domain.Name)
       }
 
       fmt.Printf("Launching cluster '%s' in domain '%s' (%s)...\n\n", args[0], domain.Name, attendant.Config().AwsRegion)
     }
     cluster, err = launchCluster(domain, args[0])
-    if err != nil {
-      fmt.Println(err.Error())
-      return
-    }
+    if err != nil { return err }
+
     fmt.Println("\nCluster launched.\n")
     fmt.Println("== Cluster details ==")
     fmt.Println(cluster.GetDetails() + "\n")
     fmt.Println("\nAccess via:\n\n\tssh " + cluster.Master.Username() + "@" + cluster.Master.AccessIP())
-	},
+    return nil
+  },
 }
 
 func init() {
-	clusterCmd.AddCommand(clusterLaunchCmd)
+  clusterCmd.AddCommand(clusterLaunchCmd)
   clusterLaunchCmd.Flags().BoolP("solo", "s", false, "Launch a Flight Compute Solo cluster")
 
   clusterLaunchCmd.Flags().StringP("compute-instance-type", "c", attendant.ComputeInstanceTypes[0], "Compute instance type")

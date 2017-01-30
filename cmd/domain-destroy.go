@@ -29,72 +29,61 @@
 package cmd
 
 import (
-	"fmt"
+  "fmt"
   
-	"github.com/spf13/cobra"
+  "github.com/spf13/cobra"
 
-	"github.com/alces-software/flight-attendant/attendant"
+  "github.com/alces-software/flight-attendant/attendant"
 )
 
 // destroyCmd represents the destroy command
 var domainDestroyCmd = &cobra.Command{
-	Use:   "destroy <domain>",
-	Short: "Destroy a Flight Compute domain",
-	Long: `Destroy a Flight Compute domain.`,
-	Run: func(cmd *cobra.Command, args []string) {
+  Use:   "destroy <domain>",
+  Short: "Destroy a Flight Compute domain",
+  Long: `Destroy a Flight Compute domain.`,
+  SilenceUsage: true,
+  RunE: func(cmd *cobra.Command, args []string) error {
     var err error
     var status *attendant.DomainStatus
 
-		if len(args) == 0 {
-			cmd.Help()
-			return
-		}
+    if len(args) == 0 {
+      cmd.Help()
+      return nil
+    }
 
     domain := attendant.NewDomain(args[0], nil)
     attendant.Spin(func() { status, err = domain.Status() })
-    if err != nil {
-      fmt.Println(err.Error())
-      return
-    }
+    if err != nil { return err }
 
     if len(status.Clusters) + len(status.Appliances) > 0 {
       if force, _ := cmd.Flags().GetBool("force"); force {
         for _, cluster := range status.Clusters {
           fmt.Printf("Destroying cluster '%s' in domain '%s' (%s)...\n\n", cluster.Name, domain.Name, attendant.Config().AwsRegion)
           err = destroyCluster(domain, cluster.Name)
-          if err != nil {
-            fmt.Println(err.Error())
-            return
-          }
+          if err != nil { return err }
           fmt.Println("\nCluster destroyed.\n")
         }
         for _, appliance := range status.Appliances {
           fmt.Printf("Destroying appliance '%s' in domain '%s' (%s)...\n\n", appliance.Name, domain.Name, attendant.Config().AwsRegion)
           err = destroyAppliance(domain, appliance.Name)
-          if err != nil {
-            fmt.Println(err.Error())
-            return
-          }
+          if err != nil { return err }
           fmt.Println("\nAppliance destroyed.\n")
         }
       } else {
-        fmt.Printf("Domain '%s' (%s) has running infrastructure or cluster stacks. Can't destroy.\n", domain.Name, attendant.Config().AwsRegion)
-        return
+        return fmt.Errorf("Domain '%s' (%s) has running infrastructure or cluster stacks. Can't destroy.\n", domain.Name, attendant.Config().AwsRegion)
       }
     }
 
     fmt.Printf("Destroying domain '%s' (%s)...\n\n", domain.Name, attendant.Config().AwsRegion)
     err = destroyDomain(domain)
-		if err != nil {
-			fmt.Println(err.Error())
-			return
-		}
+    if err != nil { return err }
     fmt.Println("Domain destroyed.")
-	},
+    return nil
+  },
 }
 
 func init() {
-	domainCmd.AddCommand(domainDestroyCmd)
+  domainCmd.AddCommand(domainDestroyCmd)
   domainDestroyCmd.Flags().BoolP("force", "f", false, "Destroy all clusters and infrastructure appliances along with the domain")
 }
 

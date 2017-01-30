@@ -29,28 +29,29 @@
 package cmd
 
 import (
-	"fmt"
+  "fmt"
   "strings"
   
-	"github.com/spf13/cobra"
+  "github.com/spf13/cobra"
 
-	"github.com/alces-software/flight-attendant/attendant"
+  "github.com/alces-software/flight-attendant/attendant"
 )
 
 var forceDomainStatus bool
 
 // statusCmd represents the status command
 var domainStatusCmd = &cobra.Command{
-	Use:   "status <domain>",
-	Short: "Show status of a Flight Compute domain",
-	Long: `Show status a Flight Compute domain.`,
-	Run: func(cmd *cobra.Command, args []string) {
+  Use:   "status <domain>",
+  Short: "Show status of a Flight Compute domain",
+  Long: `Show status a Flight Compute domain.`,
+  SilenceUsage: true,
+  RunE: func(cmd *cobra.Command, args []string) error {
     all, _ := cmd.Flags().GetBool("all")
 
-		if len(args) == 0 && !all {
-			cmd.Help()
-			return
-		}
+    if len(args) == 0 && !all {
+      cmd.Help()
+      return nil
+    }
 
     if all {
       regions := getRegions(cmd)
@@ -59,10 +60,7 @@ var domainStatusCmd = &cobra.Command{
         var domains []attendant.Domain
         attendant.Config().AwsRegion = region
         attendant.SpinWithSuffix(func() { domains, err = attendant.AllDomains() }, region)
-        if err != nil {
-          fmt.Println(err.Error())
-          return
-        }
+        if err != nil { return err }
         for _, domain := range domains {
           statusFor(&domain)
           fmt.Println("")
@@ -72,11 +70,12 @@ var domainStatusCmd = &cobra.Command{
       domain := attendant.NewDomain(args[0], nil)
       statusFor(domain)
     }
-	},
+    return nil
+  },
 }
 
 func init() {
-	domainCmd.AddCommand(domainStatusCmd)
+  domainCmd.AddCommand(domainStatusCmd)
   domainStatusCmd.Flags().Bool("all", false, "Show all domains")
   domainStatusCmd.Flags().String("regions", "", "Select regions to query")
 }

@@ -29,19 +29,20 @@
 package cmd
 
 import (
-	"fmt"
+  "fmt"
   
-	"github.com/spf13/cobra"
+  "github.com/spf13/cobra"
 
-	"github.com/alces-software/flight-attendant/attendant"
+  "github.com/alces-software/flight-attendant/attendant"
 )
 
 // listCmd represents the list command
 var domainListCmd = &cobra.Command{
-	Use:   "list",
-	Short: "List your Flight Compute domains",
-	Long: `List your Flight Compute domains.`,
-	Run: func(cmd *cobra.Command, args []string) {
+  Use:   "list",
+  Short: "List your Flight Compute domains",
+  Long: `List your Flight Compute domains.`,
+  SilenceUsage: true,
+  RunE: func(cmd *cobra.Command, args []string) error {
     var domains []attendant.Domain
     var err error
 
@@ -51,10 +52,7 @@ var domainListCmd = &cobra.Command{
       attendant.SpinWithSuffix(func() {
         domains, err = attendant.AllDomains()
       }, region)
-      if err != nil {
-        fmt.Println(err.Error())
-        return
-      }
+      if err != nil { return err }
       fmt.Printf("== Domains (%s) ==\n", attendant.Config().AwsRegion)
       if len(domains) > 0 {
         for _, domain := range domains {
@@ -69,10 +67,11 @@ var domainListCmd = &cobra.Command{
       }
       fmt.Println("")
     }
-	},
+    return nil
+  },
 }
 
 func init() {
-	domainCmd.AddCommand(domainListCmd)
+  domainCmd.AddCommand(domainListCmd)
   domainListCmd.Flags().String("regions", "", "Select regions to query")
 }
