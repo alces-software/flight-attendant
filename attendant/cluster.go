@@ -82,11 +82,11 @@ var ComputeInstanceTypes = []string{
   "enterprise-128C-1952GB.dedicated-x1.32xlarge",
 }
 
-// network: 20
-// master: 12
-// compute: 13
+// network: 19 (18)
+// master: 16 (15)
+// compute: 10 (9)
 var ClusterResourceCount int = 45
-var SoloClusterResourceCount int = 48
+var SoloClusterResourceCount int = 46
 
 func IsValidComputeInstanceType(instanceType string) bool {
   return containsS(ComputeInstanceTypes, instanceType)
