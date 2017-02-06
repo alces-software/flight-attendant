@@ -1,4 +1,4 @@
-// Copyright © 2016 Alces Software Ltd <support@alces-software.com>
+// Copyright © 2016-2017 Alces Software Ltd <support@alces-software.com>
 // This file is part of Flight Attendant.
 //
 // This program is free software: you can redistribute it and/or modify
@@ -85,8 +85,9 @@ var ComputeInstanceTypes = []string{
 // network: 19 (18)
 // master: 16 (15)
 // compute: 10 (9)
-var ClusterResourceCount int = 45
+var ClusterResourceCount int = 35
 var SoloClusterResourceCount int = 46
+var ComputeGroupResourceCount int = 10
 
 func IsValidComputeInstanceType(instanceType string) bool {
   return containsS(ComputeInstanceTypes, instanceType)
@@ -191,7 +192,7 @@ func (c *Cluster) Tags() []*cloudformation.Tag {
   }
 }
 
-func (c *Cluster) Create() error {
+func (c *Cluster) Create(withQ bool) error {
 	svc, err := CloudFormation()
   if err != nil { return err }
 
@@ -214,13 +215,53 @@ func (c *Cluster) Create() error {
     // create master node
     err = createMaster(c, svc)
     if err != nil { return err }
-    // create compute group(s)
-    err = createComputeGroup(c, svc)
-    if err != nil { return err }
   }
 
   c.MessageHandler("DONE")
 
+  if withQ {
+    err = c.AddQueue("default", "")
+    if err != nil { return err }
+  }
+  return nil
+}
+
+func (c *Cluster) AddQueue(queueName, queueParamsFile string) error {
+	svc, err := CloudFormation()
+  if err != nil { return err }
+
+  // Load some cluster information, specifically Network
+  networkStack, err := getStack(svc, "flight-" + c.Domain.Name + "-" + c.Name + "-network")
+  if err != nil { return err }
+  idx, err := strconv.Atoi(getStackTag(networkStack, "flight:network"))
+  if err != nil { return err }
+  c.Network = &ClusterNetwork{idx, networkStack}
+  masterStack, err := getStack(svc, "flight-" + c.Domain.Name + "-" + c.Name + "-master")
+  if err != nil { return err }
+  c.Master = &Master{masterStack}
+
+  tArn, qUrl, err := setupEventHandling("flight-" + c.Domain.Name + "-cluster-" + c.Name)
+  if err != nil { return err }
+  go c.processQueue(qUrl)
+  c.TopicARN = *tArn
+
+  // create compute group(s)
+  err = createComputeGroup(c, queueName, queueParamsFile, svc)
+  if err != nil { return err }
+  c.MessageHandler("DONE")
+  return nil
+}
+
+func (c *Cluster) DestroyQueue(queueName string) error {
+	svc, err := CloudFormation()
+  if err != nil { return err }
+  qUrl, err := getEventQueueUrl("flight-" + c.Domain.Name + "-cluster-" + c.Name)
+  if err != nil { return err }
+  go c.processQueue(qUrl)
+
+  err = destroyComputeGroup(c, queueName, svc)
+  if err != nil { return err }
+  c.MessageHandler("DONE")
   return nil
 }
 
@@ -294,9 +335,15 @@ func (c *Cluster) Destroy() error {
       err = destroyStack(svc, *stack.StackName)
       if err != nil { return err }
     }
-    c.MessageHandler("ENABLE-COUNTERS")
-    err = destroyComputeGroup(c, 1, svc)
+    // get compute group stacks and destroy them next
+    computeGroupStacks, _ := getComputeGroupStacksForCluster(c)
     if err != nil { return err }
+    for _, stack := range computeGroupStacks {
+      err = destroyStack(svc, *stack.StackName)
+      if err != nil { return err }
+    }
+    c.MessageHandler("ENABLE-COUNTERS")
+
     err = destroyMaster(c, svc)
     if err != nil { return err }
     err = destroyClusterNetwork(c, svc)
@@ -323,12 +370,21 @@ func (c *Cluster) GetDetails() string {
     keypair := getStackParameter(c.Master.Stack, "AccessKeyName")
     username := getStackOutput(c.Master.Stack, "Username")
     url := getStackOutput(c.Master.Stack, "WebAccess")
+    computeGroupStacks, _ := getComputeGroupStacksForCluster(c)
     componentStacks, _ := getComponentStacksForCluster(c)
     uuid := getStackConfigValue(c.Master.Stack, "UUID")
     if uuid == "" { uuid = "<unknown>" }
     token := getStackConfigValue(c.Master.Stack, "Token")
     if token == "" { token = "<unknown>" }
-    details := fmt.Sprintf("Administrator username: %s\nIP address: %s\nKey pair: %s\nAccess URL: %s\nUUID: %s\nToken: %s\n", ip, keypair, username, url, uuid, token)
+    details := fmt.Sprintf("Administrator username: %s\nIP address: %s\nKey pair: %s\nAccess URL: %s\nUUID: %s\nToken: %s\n", username, ip, keypair, url, uuid, token)
+    if (len(computeGroupStacks) > 0) {
+      details += "\nQueues: "
+      stackNames := []string{}
+      for _, stack := range computeGroupStacks {
+        stackNames = append(stackNames, *stack.StackName)
+      }
+      details += strings.Join(stackNames, ", ") + "\n"
+    }
     if (len(componentStacks) > 0) {
       details += "\nComponents: "
       stackNames := []string{}
@@ -343,11 +399,11 @@ func (c *Cluster) GetDetails() string {
   }
 }
 
-func destroyComputeGroup(cluster *Cluster, index int, svc *cloudformation.CloudFormation) error {
-  stackName := fmt.Sprintf("flight-%s-%s-compute-%d",
+func destroyComputeGroup(cluster *Cluster, queueName string, svc *cloudformation.CloudFormation) error {
+  stackName := fmt.Sprintf("flight-%s-%s-compute-%s",
     cluster.Domain.Name,
     cluster.Name,
-    index)
+    queueName)
 
   return destroyStack(svc, stackName)
 }
@@ -435,13 +491,18 @@ func loadParameterSet(componentName string, defaultParameterSet map[string]strin
   return defaultParameterSet
 }
 
-func createComputeGroup(cluster *Cluster, svc *cloudformation.CloudFormation) error {
-  launchParams := createClusterComponentLaunchParameters(cluster,
-    loadParameterSet("cluster-compute", ClusterComputeParameters))
-  stackName := fmt.Sprintf("flight-%s-%s-compute-%d",
+func createComputeGroup(cluster *Cluster, queueName, queueParamsFile string, svc *cloudformation.CloudFormation) error {
+  var defaultLaunchParams map[string]string
+  if queueParamsFile == "" {
+    defaultLaunchParams = loadParameterSet("cluster-compute", ClusterComputeParameters)
+  } else {
+    defaultLaunchParams = loadComponentParameters(queueParamsFile)
+  }
+  launchParams := createClusterComponentLaunchParameters(cluster, defaultLaunchParams)
+  stackName := fmt.Sprintf("flight-%s-%s-compute-%s",
     cluster.Domain.Name,
     cluster.Name,
-    len(cluster.ComputeGroups) + 1)
+    queueName)
   url := TemplateUrl(clusterComputeTemplate)
 
   stack, err := createStack(svc, launchParams, cluster.Tags(), url, stackName, "compute", cluster.TopicARN, cluster.Domain)
@@ -513,14 +574,18 @@ func createClusterComponentLaunchParameters(cluster *Cluster, parameterSet map[s
         val = "password-auth"
       }
     case "%COMPUTE_INSTANCE_TYPE%":
-      instanceOverride := viper.GetString("compute-instance-override")
+      instanceOverride := viper.GetString("queue-instance-override")
       if instanceOverride != "" {
         val = "other"
       } else {
-        val = viper.GetString("compute-instance-type")
+        // if we're launching via cluster launch, we use default-queue-instance-type, otherwise we use queue-instance-type
+        val = viper.GetString("queue-instance-type")
+        if val == "" {
+          val = viper.GetString("default-queue-instance-type")
+        }
       }
     case "%COMPUTE_INSTANCE_OVERRIDE%":
-      val = viper.GetString("compute-instance-override")
+      val = viper.GetString("queue-instance-override")
       if val == "" { val = "%NULL%" }
     case "%VPC%":
       val = cluster.Domain.VPC()

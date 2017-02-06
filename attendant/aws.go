@@ -352,6 +352,18 @@ func getComponentStacksForCluster(cluster *Cluster) ([]*cloudformation.Stack, er
   return componentStacks, err
 }
 
+func getComputeGroupStacksForCluster(cluster *Cluster) ([]*cloudformation.Stack, error) {
+  var computeGroupStacks = []*cloudformation.Stack{}
+  err := eachRunningStack(func(stack *cloudformation.Stack) {
+    if getStackTag(stack, "flight:type") == "compute" &&
+      getStackTag(stack, "flight:cluster") == cluster.Name &&
+      getStackTag(stack, "flight:domain") == cluster.Domain.Name {
+      computeGroupStacks = append(computeGroupStacks, stack)
+    }
+  })
+  return computeGroupStacks, err
+}
+
 func eachRunningStackAll(fn func(stack *cloudformation.Stack)) error {
 	svc, err := CloudFormation()
   if err != nil { return err }
@@ -404,12 +416,18 @@ func eachRunningStack(fn func(stack *cloudformation.Stack)) error {
   if err != nil { return err }
 
 	for _, value := range resp.StackSummaries {
+    var stacksResp *cloudformation.DescribeStacksOutput
 		if strings.HasPrefix(*value.StackName, "flight-") {
-			stacksResp, err := svc.DescribeStacks(&cloudformation.DescribeStacksInput{
-				StackName: value.StackName,
-			})
+      getter := func() {
+        stacksResp, err = svc.DescribeStacks(&cloudformation.DescribeStacksInput{
+          StackName: value.StackName,
+        })
+      }
+      getter()
       if err != nil {
-        if strings.HasPrefix(err.Error(), "AccessDenied") {
+        if strings.HasPrefix(err.Error(), "Throttling: Rate exceeded") {
+          getter()
+        } else if strings.HasPrefix(err.Error(), "AccessDenied") {
           continue
         } else {
           return err
