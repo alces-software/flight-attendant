@@ -32,15 +32,15 @@ import (
   "fmt"
   "strings"
   "encoding/json"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/service/cloudformation"
-	"github.com/aws/aws-sdk-go/service/ec2"
-	"github.com/aws/aws-sdk-go/service/sns"
-	"github.com/aws/aws-sdk-go/service/sqs"
-	"github.com/guregu/dynamo"
+  "github.com/aws/aws-sdk-go/aws"
+  "github.com/aws/aws-sdk-go/aws/awserr"
+  "github.com/aws/aws-sdk-go/aws/session"
+  "github.com/aws/aws-sdk-go/aws/credentials"
+  "github.com/aws/aws-sdk-go/service/cloudformation"
+  "github.com/aws/aws-sdk-go/service/ec2"
+  "github.com/aws/aws-sdk-go/service/sns"
+  "github.com/aws/aws-sdk-go/service/sqs"
+  "github.com/guregu/dynamo"
   "github.com/go-ini/ini"
 )
 
@@ -88,7 +88,7 @@ func AwsSession() (*session.Session, error) {
 func CloudFormation() (*cloudformation.CloudFormation, error) {
   sess, err := AwsSession()
   if err != nil { return nil, err }
-	return cloudformation.New(sess), nil
+  return cloudformation.New(sess), nil
 }
 
 func Dynamo() (*dynamo.DB, error) {
@@ -203,13 +203,13 @@ func createStack(
   createParams := &cloudformation.CreateStackInput{
     Capabilities: []*string{aws.String("CAPABILITY_IAM")},
     NotificationARNs: []*string{aws.String(topicArn)},
-		StackName: aws.String(stackName),
-		TemplateURL: aws.String(templateUrl),
+    StackName: aws.String(stackName),
+    TemplateURL: aws.String(templateUrl),
     Parameters: params,
-		Tags: stackTags,
-	}
+    Tags: stackTags,
+  }
 
-	_, err := svc.CreateStack(createParams)
+  _, err := svc.CreateStack(createParams)
   if err != nil { return nil, err }
 
   return awaitStack(svc, stackName)
@@ -229,7 +229,7 @@ func awaitStack(svc *cloudformation.CloudFormation, stackName string) (*cloudfor
 
 func destroyStack(svc *cloudformation.CloudFormation, stackName string) error {
   deleteParams := &cloudformation.DeleteStackInput{StackName: aws.String(stackName)}
-	_, err := svc.DeleteStack(deleteParams)
+  _, err := svc.DeleteStack(deleteParams)
   if err != nil { return err }
 
   stackParams := &cloudformation.DescribeStacksInput{StackName: aws.String(stackName)}
@@ -365,20 +365,20 @@ func getComputeGroupStacksForCluster(cluster *Cluster) ([]*cloudformation.Stack,
 }
 
 func eachRunningStackAll(fn func(stack *cloudformation.Stack)) error {
-	svc, err := CloudFormation()
+  svc, err := CloudFormation()
   if err != nil { return err }
 
-	listParams := &cloudformation.ListStacksInput{
-		StackStatusFilter: []*string{
-			aws.String("CREATE_COMPLETE"),
-			aws.String("CREATE_IN_PROGRESS"),
-		},
-	}
+  listParams := &cloudformation.ListStacksInput{
+    StackStatusFilter: []*string{
+      aws.String("CREATE_COMPLETE"),
+      aws.String("CREATE_IN_PROGRESS"),
+    },
+  }
 
-	resp, err := svc.ListStacks(listParams)
+  resp, err := svc.ListStacks(listParams)
   if err != nil { return err }
 
-	for _, value := range resp.StackSummaries {
+  for _, value := range resp.StackSummaries {
     var stacksResp *cloudformation.DescribeStacksOutput
     getter := func() {
       stacksResp, err = svc.DescribeStacks(&cloudformation.DescribeStacksInput{
@@ -402,22 +402,22 @@ func eachRunningStackAll(fn func(stack *cloudformation.Stack)) error {
 }
 
 func eachRunningStack(fn func(stack *cloudformation.Stack)) error {
-	svc, err := CloudFormation()
+  svc, err := CloudFormation()
   if err != nil { return err }
 
-	listParams := &cloudformation.ListStacksInput{
-		StackStatusFilter: []*string{
-			aws.String("CREATE_COMPLETE"),
-			aws.String("CREATE_IN_PROGRESS"),
-		},
-	}
+  listParams := &cloudformation.ListStacksInput{
+    StackStatusFilter: []*string{
+      aws.String("CREATE_COMPLETE"),
+      aws.String("CREATE_IN_PROGRESS"),
+    },
+  }
 
-	resp, err := svc.ListStacks(listParams)
+  resp, err := svc.ListStacks(listParams)
   if err != nil { return err }
 
-	for _, value := range resp.StackSummaries {
+  for _, value := range resp.StackSummaries {
     var stacksResp *cloudformation.DescribeStacksOutput
-		if strings.HasPrefix(*value.StackName, "flight-") {
+    if strings.HasPrefix(*value.StackName, "flight-") {
       getter := func() {
         stacksResp, err = svc.DescribeStacks(&cloudformation.DescribeStacksInput{
           StackName: value.StackName,
@@ -434,8 +434,8 @@ func eachRunningStack(fn func(stack *cloudformation.Stack)) error {
         }
       }
       fn(stacksResp.Stacks[0])
-		}
-	}
+    }
+  }
 
   return err
 }
@@ -557,9 +557,20 @@ func receiveMessage(qUrl *string, handler func(msg string)) {
         return
       }
       section := cfg.Section("")
-      physRes := section.Key("PhysicalResourceId").String()
-      if physRes != "" {
-        handler(fmt.Sprintf("%s %s (%s)", section.Key("ResourceStatus").String(), section.Key("LogicalResourceId").String(), physRes))
+      var physResStr, logicalResStr string
+      physRes := section.Key("PhysicalResourceId")
+      if physRes != nil {
+        physResStr = physRes.String()
+        if physResStr != "" {
+          logicalRes := section.Key("LogicalResourceId")
+          if logicalRes != nil {
+            logicalResStr = logicalRes.String()
+            resStatus := section.Key("ResourceStatus")
+            if resStatus != nil {
+              handler(fmt.Sprintf("%s %s (%s)", resStatus.String(), logicalResStr, physResStr))
+            }
+          }
+        }
       }
     }
     _, err = svc.DeleteMessage(&sqs.DeleteMessageInput{QueueUrl: qUrl, ReceiptHandle: message.ReceiptHandle})
