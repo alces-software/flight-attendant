@@ -31,14 +31,18 @@ package attendant
 import (
   "fmt"
   "strconv"
+  "strings"
   "time"
-  
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/service/cloudformation"
+
+  "github.com/spf13/viper"
+
+  "github.com/aws/aws-sdk-go/aws"
+  "github.com/aws/aws-sdk-go/aws/awserr"
+  "github.com/aws/aws-sdk-go/service/cloudformation"
 )
 
-var DomainResourceCount int = 35
+var BareDomainResourceCount int = 35
+var PeeredDomainResourceCount int = 41
 
 type Domain struct {
   Name string
@@ -149,7 +153,7 @@ func (d *Domain) Status() (*DomainStatus, error) {
 }
 
 func (d *Domain) Destroy() error {
-	svc, err := CloudFormation()
+  svc, err := CloudFormation()
   if err != nil { return err }
 
   if err = d.AssertExists(); err != nil {
@@ -187,7 +191,7 @@ func (d *Domain) AssertExists() error {
   if d.Stack != nil {
     return nil
   }
-	svc, err := CloudFormation()
+  svc, err := CloudFormation()
   if err != nil { return err }
 
   stacksResp, err := svc.DescribeStacks(&cloudformation.DescribeStacksInput{
@@ -221,8 +225,23 @@ func (d *Domain) processQueue(qUrl *string) {
   }
 }
 
-func (d *Domain) Create(prefix string) error {
-	svc, err := CloudFormation()
+func (d *Domain) Create(prefix string, domainParamsFile string) error {
+  var defaultLaunchParams map[string]string
+  if domainParamsFile == "" {
+    defaultLaunchParams = loadParameterSet("domain", DomainParameters)
+  } else {
+    defaultLaunchParams = loadComponentParameters(domainParamsFile)
+  }
+
+  peerVpc := defaultLaunchParams["PeerVPC"]
+  if peerVpc == "%PEER_VPC%" {
+    peerVpc = viper.GetString("peer-vpc")
+  }
+  if peerVpc != "" {
+    d.MessageHandler(fmt.Sprintf("COUNTERS=%d",PeeredDomainResourceCount))
+  }
+
+  svc, err := CloudFormation()
   if err != nil { return err }
 
   stackName := "flight-" + d.Name
@@ -230,27 +249,28 @@ func (d *Domain) Create(prefix string) error {
   if err != nil { return err }
   go d.processQueue(qUrl)
 
-	params := &cloudformation.CreateStackInput{
-		StackName: aws.String(stackName),
-		TemplateURL: aws.String(TemplateUrl("domain.json")),
+  params := &cloudformation.CreateStackInput{
+    StackName: aws.String(stackName),
+    TemplateURL: aws.String(TemplateUrl("domain.json")),
     NotificationARNs: []*string{tArn},
-		Tags: []*cloudformation.Tag{
-			{
-				Key: aws.String("flight:domain"),
-				Value: aws.String(d.Name),
-			},
-			{
-				Key: aws.String("flight:prefix"),
-				Value: aws.String(prefix),
-			},
-			{
-				Key: aws.String("flight:type"),
-				Value: aws.String("domain"),
-			},
-		},
-	}
+    Tags: []*cloudformation.Tag{
+      {
+        Key: aws.String("flight:domain"),
+        Value: aws.String(d.Name),
+      },
+      {
+        Key: aws.String("flight:prefix"),
+        Value: aws.String(prefix),
+      },
+      {
+        Key: aws.String("flight:type"),
+        Value: aws.String("domain"),
+      },
+    },
+    Parameters: createDomainLaunchParameters(d, defaultLaunchParams),
+  }
 
-	_, err = svc.CreateStack(params)
+  _, err = svc.CreateStack(params)
   if err != nil {
     cleanupEventHandling(stackName)
     return err
@@ -293,4 +313,30 @@ func DefaultDomain() (*Domain, error) {
     return nil, fmt.Errorf("No domains were found.")
   }
   return &domains[0], nil
+}
+
+func createDomainLaunchParameters(domain *Domain, parameterSet map[string]string) []*cloudformation.Parameter {
+  params := []*cloudformation.Parameter{}
+  for key, value := range parameterSet {
+    var val string
+    if strings.HasPrefix(value, "%") && strings.HasSuffix(value, "%") {
+      configKey := strings.ToLower(strings.Replace(value[1:len(value)-1], "_", "-", -1))
+      if viper.IsSet(configKey) {
+        val = viper.GetString(configKey)
+      } else {
+        val = "%NULL%"
+      }
+    } else {
+      val = value
+    }
+
+    if val != "%NULL%" {
+      // fmt.Println(key + " -> " + val)
+      params = append(params, &cloudformation.Parameter{
+        ParameterKey: aws.String(key),
+        ParameterValue: aws.String(val),
+      })
+    }
+  }
+  return params
 }

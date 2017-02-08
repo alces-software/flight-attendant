@@ -91,6 +91,11 @@ var ConfigDefaults = map[string]string {
   "compute-autoscaling-policy": "enabled",
   "compute-initial-nodes": "1",
   "compute-system-volume-type": "magnetic.standard",
+
+  "peer-vpc": "",
+  "peer-vpc-route-table": "",
+  "peer-vpc-cidr-block": "",
+  "allow-internet-access": "1",
 }
 
 type Configuration struct {
