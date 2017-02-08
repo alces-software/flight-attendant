@@ -135,6 +135,13 @@ var AwsRegions = []string {
   "us-west-2",
 }
 
+var DomainParameters = map[string]string {
+  "PeerVPC": "%PEER_VPC%",
+  "PeerVPCRouteTable": "%PEER_VPC_ROUTE_TABLE%",
+  "PeerVPCCIDRBlock": "%PEER_VPC_CIDR_BLOCK%",
+  "AllowInternetAccess": "%ALLOW_INTERNET_ACCESS%",
+}
+
 var ClusterComputeParameters = map[string]string {
   "ClusterName": "%CLUSTER_NAME%",
   "AccessKeyName": "%ACCESS_KEY_NAME%",
@@ -271,6 +278,7 @@ var SoloParameters = map[string]string {
 }
 
 var ParameterSets = map[string]*map[string]string {
+  "domain": &DomainParameters,
   "cluster-network": &ClusterNetworkParameters,
   "cluster-master": &ClusterMasterParameters,
   "cluster-compute": &ClusterComputeParameters,

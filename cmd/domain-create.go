@@ -50,8 +50,11 @@ var domainCreateCmd = &cobra.Command{
 
     if err := setupTemplateSource("domainCreate"); err != nil { return err }
 
+    domainParamsFile, err := cmd.Flags().GetString("params")
+    if err != nil { return err }
+
     fmt.Printf("Creating domain '%s' (%s)...\n\n", args[0], attendant.Config().AwsRegion)
-    _, err := createDomain(args[0])
+    _, err = createDomain(args[0], domainParamsFile)
     if err != nil { return err }
 
     fmt.Println("\nDomain created.")
@@ -63,13 +66,14 @@ func init() {
   domainCmd.AddCommand(domainCreateCmd)
   addTemplateSetFlag(domainCreateCmd, "domainCreate")
   addTemplateRootFlag(domainCreateCmd, "domainCreate")
+  domainCreateCmd.Flags().StringP("params", "p", "", "File containing parameters to use when creating the domain")
 }
 
-func createDomain(name string) (*attendant.Domain, error) {
-  handler, err := attendant.CreateCreateHandler(attendant.DomainResourceCount)
+func createDomain(name string, domainParamsFile string) (*attendant.Domain, error) {
+  handler, err := attendant.CreateCreateHandler(attendant.BareDomainResourceCount)
   if err != nil { return nil, err }
   domain := attendant.NewDomain(name, handler)
-  attendant.Spin(func() { err = domain.Create(name) } )
+  attendant.Spin(func() { err = domain.Create(name, domainParamsFile) } )
   domain.MessageHandler = nil
   return domain, err
 }

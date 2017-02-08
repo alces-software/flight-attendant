@@ -88,7 +88,8 @@ func init() {
 }
 
 func destroyDomain(domain *attendant.Domain) error {
-  handler, err := attendant.CreateDestroyHandler(attendant.DomainResourceCount)
+  // XXX - count should be determined based on whether the domain is peered or not
+  handler, err := attendant.CreateDestroyHandler(attendant.BareDomainResourceCount)
   if err != nil { return err }
   domain.MessageHandler = handler
   attendant.Spin(func() { err = domain.Destroy() })

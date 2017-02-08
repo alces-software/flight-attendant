@@ -35,11 +35,11 @@ import (
   "strings"
   "time"
 
-	"github.com/spf13/viper"
+  "github.com/spf13/viper"
 
   "github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/service/cloudformation"
+  "github.com/aws/aws-sdk-go/aws/awserr"
+  "github.com/aws/aws-sdk-go/service/cloudformation"
 
   "gopkg.in/yaml.v2"
 )
@@ -193,7 +193,7 @@ func (c *Cluster) Tags() []*cloudformation.Tag {
 }
 
 func (c *Cluster) Create(withQ bool) error {
-	svc, err := CloudFormation()
+  svc, err := CloudFormation()
   if err != nil { return err }
 
   if c.Domain == nil {
@@ -227,7 +227,7 @@ func (c *Cluster) Create(withQ bool) error {
 }
 
 func (c *Cluster) AddQueue(queueName, queueParamsFile string) error {
-	svc, err := CloudFormation()
+  svc, err := CloudFormation()
   if err != nil { return err }
 
   // Load some cluster information, specifically Network
@@ -253,7 +253,7 @@ func (c *Cluster) AddQueue(queueName, queueParamsFile string) error {
 }
 
 func (c *Cluster) DestroyQueue(queueName string) error {
-	svc, err := CloudFormation()
+  svc, err := CloudFormation()
   if err != nil { return err }
   qUrl, err := getEventQueueUrl("flight-" + c.Domain.Name + "-cluster-" + c.Name)
   if err != nil { return err }
@@ -266,7 +266,7 @@ func (c *Cluster) DestroyQueue(queueName string) error {
 }
 
 func (c *Cluster) Expand(componentType, componentName, componentParamsFile string) error {
-	svc, err := CloudFormation()
+  svc, err := CloudFormation()
   if err != nil { return err }
 
   // Load some cluster information, specifically Network
@@ -292,7 +292,7 @@ func (c *Cluster) Expand(componentType, componentName, componentParamsFile strin
 }
 
 func (c *Cluster) Reduce(componentType, componentName string) error {
-	svc, err := CloudFormation()
+  svc, err := CloudFormation()
   if err != nil { return err }
 
   tArn, qUrl, err := setupEventHandling("flight-" + c.Domain.Name + "-cluster-" + c.Name)
@@ -308,7 +308,7 @@ func (c *Cluster) Reduce(componentType, componentName string) error {
 }
 
 func (c *Cluster) Destroy() error {
-	svc, err := CloudFormation()
+  svc, err := CloudFormation()
   if err != nil { return err }
   if c.Domain == nil {
     // destroying a solo cluster
@@ -335,14 +335,16 @@ func (c *Cluster) Destroy() error {
       err = destroyStack(svc, *stack.StackName)
       if err != nil { return err }
     }
+    c.MessageHandler("ENABLE-COUNTERS")
+
     // get compute group stacks and destroy them next
     computeGroupStacks, _ := getComputeGroupStacksForCluster(c)
     if err != nil { return err }
+    c.MessageHandler(fmt.Sprintf("COUNTERS=%d",ClusterResourceCount + (ComputeGroupResourceCount * len(computeGroupStacks))))
     for _, stack := range computeGroupStacks {
       err = destroyStack(svc, *stack.StackName)
       if err != nil { return err }
     }
-    c.MessageHandler("ENABLE-COUNTERS")
 
     err = destroyMaster(c, svc)
     if err != nil { return err }
