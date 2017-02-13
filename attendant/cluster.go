@@ -367,18 +367,35 @@ func (c *Cluster) Destroy() error {
 }
 
 func (c *Cluster) GetDetails() string {
+  if c.Master == nil {
+    if svc, err := CloudFormation(); err == nil {
+      if masterStack, err := getStack(svc, "flight-" + c.Domain.Name + "-" + c.Name + "-master"); err == nil {
+        c.Master = &Master{masterStack}
+      }
+    }
+  }
   if c.Master != nil {
     ip := getStackOutput(c.Master.Stack, "AccessIP")
+    if ip == "" {
+      ip = getStackOutput(c.Master.Stack, "MasterPrivateIP")
+    }
     keypair := getStackParameter(c.Master.Stack, "AccessKeyName")
     username := getStackOutput(c.Master.Stack, "Username")
     url := getStackOutput(c.Master.Stack, "WebAccess")
+    if url == "" {
+      url = getStackOutput(c.Master.Stack, "PrivateWebAccess")
+    }
     computeGroupStacks, _ := getComputeGroupStacksForCluster(c)
     componentStacks, _ := getComponentStacksForCluster(c)
     uuid := getStackConfigValue(c.Master.Stack, "UUID")
     if uuid == "" { uuid = "<unknown>" }
     token := getStackConfigValue(c.Master.Stack, "Token")
     if token == "" { token = "<unknown>" }
-    details := fmt.Sprintf("Administrator username: %s\nIP address: %s\nKey pair: %s\nAccess URL: %s\nUUID: %s\nToken: %s\n", username, ip, keypair, url, uuid, token)
+    details := fmt.Sprintf("Administrator username: %s\nIP address: %s\nKey pair: %s", username, ip, keypair)
+    if url != "" {
+      details += "\nAccess URL: " + url
+    }
+    details += fmt.Sprintf("\nUUID: %s\nToken: %s\n", uuid, token)
     if (len(computeGroupStacks) > 0) {
       details += "\nQueues: "
       stackNames := []string{}

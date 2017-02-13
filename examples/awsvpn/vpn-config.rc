@@ -1,0 +1,7 @@
+outside_gws=(52.30.65.180 52.214.19.183)
+inside_customer_gws=(169.254.20.170/30 169.254.20.154/30)
+inside_virtual_prv_gws=(169.254.20.169/30 169.254.20.153/30)
+psks=(TDxJ580b_3VWCSUZVWTBfLPXE1jJ2Wow 9reFJLQSMQElorzIX1UCBod9IIwiRQ11)
+customer_gateway_asn=64512
+virtual_prv_gw_asns=(9059 9059)
+neighbor_ip_addrs=(169.254.20.169 169.254.20.153)

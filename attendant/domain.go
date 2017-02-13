@@ -29,6 +29,7 @@
 package attendant
 
 import (
+  "encoding/xml"
   "fmt"
   "strconv"
   "strings"
@@ -41,8 +42,12 @@ import (
   "github.com/aws/aws-sdk-go/service/cloudformation"
 )
 
-var BareDomainResourceCount int = 35
-var PeeredDomainResourceCount int = 41
+var DomainResourceCount int = 35
+var DomainPeeringResourceCount int = 4
+var DomainPeerRoutesResourceCount int = 2
+var DomainVPNResourceCount int = 4
+var DomainInternetAccessResourceCount int = 3
+var DomainNoInternetAccessResourceCount int = 1
 
 type Domain struct {
   Name string
@@ -53,6 +58,43 @@ type Domain struct {
 type DomainStatus struct {
   Clusters map[string]*Cluster
   Appliances map[string]*Appliance
+  HasInternetAccess bool
+  VPNConnectionId string
+  PeerVPC string
+  PeerVPCCIDRBlock string
+  VPNDetails VPNConnectionDetails
+}
+
+type XMLVPNConnection struct {
+  Tunnels []struct {
+    OutsideClientAddr string `xml:"customer_gateway>tunnel_outside_address>ip_address"`
+    InsideClientAddr string `xml:"customer_gateway>tunnel_inside_address>ip_address"`
+    InsideClientCidr string `xml:"customer_gateway>tunnel_inside_address>network_cidr"`
+    ClientASN string `xml:"customer_gateway>bgp>asn"`
+
+    OutsideAwsAddr string `xml:"vpn_gateway>tunnel_outside_address>ip_address"`
+    InsideAwsAddr string `xml:"vpn_gateway>tunnel_inside_address>ip_address"`
+    InsideAwsCidr string `xml:"vpn_gateway>tunnel_inside_address>network_cidr"`
+    AwsASN string `xml:"vpn_gateway>bgp>asn"`
+
+    SharedKey string `xml:"ike>pre_shared_key"`
+  } `xml:"ipsec_tunnel"`
+}
+
+type VPNConnectionDetails struct {
+  OutsideClientAddr string `yaml:"OutsideClientAddr"`
+  ClientASN string `yaml:"ClientASN"`
+  InsideCidr string `yaml:"InsideCIDR"`
+  Tunnel1 IPSecTunnel
+  Tunnel2 IPSecTunnel
+}
+
+type IPSecTunnel struct {
+  OutsideAwsAddr string `yaml:"OutsideAwsAddr"`
+  InsideAwsAddr string `yaml:"InsideAwsAddr"`
+  InsideClientAddr string `yaml:"InsideClientAddr"`
+  SharedKey string `yaml:"SharedKey"`
+  AwsASN string `yaml:"AwsASN"`
 }
 
 func (d *Domain) Prefix() string {
@@ -105,7 +147,8 @@ func (d *Domain) getOutput(key string) string {
 }
 
 func SoloStatus() (*DomainStatus, error) {
-  var soloStatus = DomainStatus{make(map[string]*Cluster),make(map[string]*Appliance)}
+  var soloStatus DomainStatus
+  soloStatus.Clusters = make(map[string]*Cluster)
   err := eachRunningStack(func(stack *cloudformation.Stack) {
     stackType := getStackTag(stack, "flight:type")
     if stackType == "solo" {
@@ -120,7 +163,9 @@ func SoloStatus() (*DomainStatus, error) {
 func (d *Domain) Status() (*DomainStatus, error) {
   err := d.AssertExists()
   if err != nil { return nil, err }
-  var runningInfra = DomainStatus{make(map[string]*Cluster),make(map[string]*Appliance)}
+  var status DomainStatus
+  status.Clusters = make(map[string]*Cluster)
+  status.Appliances = make(map[string]*Appliance)
   // check no infrastructure or clusters exist in domain
   err = eachRunningStack(func(stack *cloudformation.Stack) {
     for _, tag := range stack.Tags {
@@ -129,10 +174,10 @@ func (d *Domain) Status() (*DomainStatus, error) {
         switch stackType {
         case "master", "network", "compute":
           clusterName := getStackTag(stack, "flight:cluster")
-          cluster, exists := runningInfra.Clusters[clusterName]
+          cluster, exists := status.Clusters[clusterName]
           if ! exists {
             cluster = &Cluster{Name: clusterName, Domain: d}
-            runningInfra.Clusters[clusterName] = cluster
+            status.Clusters[clusterName] = cluster
           }
           if stackType == "master" {
             cluster.Master = &Master{stack}
@@ -144,12 +189,19 @@ func (d *Domain) Status() (*DomainStatus, error) {
           }
         case "appliance":
           applianceName := getStackTag(stack, "flight:appliance")
-          runningInfra.Appliances[applianceName] = &Appliance{applianceName, d, stack, nil}
+          status.Appliances[applianceName] = &Appliance{applianceName, d, stack, nil}
         }
       }
     }
   })
-  return &runningInfra, err
+  status.HasInternetAccess = d.HasInternetAccess()
+  status.VPNConnectionId = getStackOutput(d.Stack, "VpnConnection")
+  status.PeerVPC = getStackParameter(d.Stack, "PeerVPC")
+  status.PeerVPCCIDRBlock = getStackParameter(d.Stack, "PeerVPCCIDRBlock")
+  if status.VPNConnectionId != "" {
+    status.VPNDetails, err = getVPNDetails(status.VPNConnectionId)
+  }
+  return &status, err
 }
 
 func (d *Domain) Destroy() error {
@@ -233,13 +285,7 @@ func (d *Domain) Create(prefix string, domainParamsFile string) error {
     defaultLaunchParams = loadComponentParameters(domainParamsFile)
   }
 
-  peerVpc := defaultLaunchParams["PeerVPC"]
-  if peerVpc == "%PEER_VPC%" {
-    peerVpc = viper.GetString("peer-vpc")
-  }
-  if peerVpc != "" {
-    d.MessageHandler(fmt.Sprintf("COUNTERS=%d",PeeredDomainResourceCount))
-  }
+  d.MessageHandler(fmt.Sprintf("COUNTERS=%d",resourceCountFor(defaultLaunchParams)))
 
   svc, err := CloudFormation()
   if err != nil { return err }
@@ -286,6 +332,10 @@ func (d *Domain) Create(prefix string, domainParamsFile string) error {
   d.MessageHandler("DONE")
 
   return err
+}
+
+func (d *Domain) HasInternetAccess() bool {
+  return getStackParameter(d.Stack, "AllowInternetAccess") != "0"
 }
 
 func NewDomain(name string, handler func(msg string)) *Domain {
@@ -339,4 +389,70 @@ func createDomainLaunchParameters(domain *Domain, parameterSet map[string]string
     }
   }
   return params
+}
+
+func resourceCountFor(params map[string]string) int {
+  resourceCount := DomainResourceCount
+
+  peerVpc := params["PeerVPC"]
+  if peerVpc == "%PEER_VPC%" {
+    peerVpc = viper.GetString("peer-vpc")
+  }
+  if peerVpc != "" {
+    resourceCount += DomainPeeringResourceCount
+    peerVpcRouteTable := params["PeerVPCRouteTable"]
+    if peerVpcRouteTable == "%PEER_VPCROUTE_TABLE%" {
+      peerVpcRouteTable = viper.GetString("peer-vpc-route-table")
+    }
+    if peerVpcRouteTable != "" {
+      resourceCount += DomainPeerRoutesResourceCount
+    }
+  }
+
+  allowInternet := params["AllowInternetAccess"]
+  if allowInternet == "%ALLOW_INTERNET_ACCCESS%" {
+    allowInternet = viper.GetString("allow-internet-access")
+  }
+  if allowInternet == "0" {
+    resourceCount -= DomainInternetAccessResourceCount
+    resourceCount += DomainNoInternetAccessResourceCount
+  }
+
+  vpnGateway := params["VPNCustomerGateway"]
+  if vpnGateway == "%VPN_CUSTOMER_GATEWAY%" {
+    vpnGateway = viper.GetString("vpn-customer-gateway")
+  }
+  if vpnGateway != "" {
+    resourceCount += DomainVPNResourceCount
+  }
+
+  return resourceCount
+}
+
+func getVPNDetails(vpnConnectionId string) (VPNConnectionDetails, error) {
+  var details VPNConnectionDetails
+  var xmlData XMLVPNConnection
+  xmlStr, err := describeVPNConnection(vpnConnectionId)
+  if err != nil { return details, err }
+  xml.Unmarshal([]byte(*xmlStr), &xmlData)
+  if len(xmlData.Tunnels) == 0 { return details, fmt.Errorf("Unable to parse VPN connection data") }
+  details.OutsideClientAddr = xmlData.Tunnels[0].OutsideClientAddr
+  details.ClientASN = xmlData.Tunnels[0].ClientASN
+  details.InsideCidr = xmlData.Tunnels[0].InsideAwsCidr
+  details.Tunnel1 = IPSecTunnel{
+    xmlData.Tunnels[0].OutsideAwsAddr,
+    xmlData.Tunnels[0].InsideAwsAddr,
+    xmlData.Tunnels[0].InsideClientAddr,
+    xmlData.Tunnels[0].SharedKey,
+    xmlData.Tunnels[0].AwsASN,
+  }
+  details.Tunnel2 = IPSecTunnel{
+    xmlData.Tunnels[1].OutsideAwsAddr,
+    xmlData.Tunnels[1].InsideAwsAddr,
+    xmlData.Tunnels[1].InsideClientAddr,
+    xmlData.Tunnels[1].SharedKey,
+    xmlData.Tunnels[1].AwsASN,
+  }
+
+  return details, nil
 }

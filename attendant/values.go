@@ -140,6 +140,7 @@ var DomainParameters = map[string]string {
   "PeerVPCRouteTable": "%PEER_VPC_ROUTE_TABLE%",
   "PeerVPCCIDRBlock": "%PEER_VPC_CIDR_BLOCK%",
   "AllowInternetAccess": "%ALLOW_INTERNET_ACCESS%",
+  "VPNCustomerGateway": "%VPN_CUSTOMER_GATEWAY%",
 }
 
 var ClusterComputeParameters = map[string]string {
@@ -212,6 +213,7 @@ var ClusterMasterParameters = map[string]string {
   "NetworkingPool": "%NETWORK_POOL%",
   "NetworkingIndex": "%NETWORK_INDEX%",
   "PrvSubnet": "%PRV_SUBNET%",
+  "AllowInternetAccess": "%ALLOW_INTERNET_ACCESS%",
 }
 
 var DomainApplianceParameters = map[string]string {
@@ -227,6 +229,7 @@ var DomainApplianceParameters = map[string]string {
   "FlightVPC": "%VPC%",
   "PubSubnet": "%PUB_SUBNET%",
   "MgtSubnet": "%MGT_SUBNET%",
+  "AllowInternetAccess": "%ALLOW_INTERNET_ACCESS%",
 }
 
 var BasicApplianceParameters = map[string]string {
@@ -243,6 +246,7 @@ var BasicApplianceParameters = map[string]string {
   "Domain": "%DOMAIN%",
   "FlightVPC": "%VPC%",
   "PubSubnet": "%PUB_SUBNET%",
+  "AllowInternetAccess": "%ALLOW_INTERNET_ACCESS%",
 }
 
 var SoloParameters = map[string]string {
