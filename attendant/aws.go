@@ -592,3 +592,14 @@ type NotificationMessage struct {
   SigningCertURL string
   UnsubscribeURL string
 }
+
+func describeVPNConnection(connectionId string) (*string, error) {
+  svc, err := EC2()
+  if err != nil { return nil, err }
+  // list NICs for subnet
+  resp, err := svc.DescribeVpnConnections(&ec2.DescribeVpnConnectionsInput{
+    VpnConnectionIds: []*string{aws.String(connectionId)},
+  })
+  if err != nil { return nil, err }
+  return resp.VpnConnections[0].CustomerGatewayConfiguration, nil
+}

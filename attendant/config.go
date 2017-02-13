@@ -95,6 +95,8 @@ var ConfigDefaults = map[string]string {
   "peer-vpc": "",
   "peer-vpc-route-table": "",
   "peer-vpc-cidr-block": "",
+  "vpn-customer-gateway": "",
+
   "allow-internet-access": "1",
 }
 

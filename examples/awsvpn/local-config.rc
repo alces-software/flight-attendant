@@ -1,0 +1,5 @@
+hostname=snake
+password=password1234
+enable_password=password1234
+local_ip=10.3.1.10
+local_net=10.3.1.0/24

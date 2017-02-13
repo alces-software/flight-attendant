@@ -92,7 +92,11 @@ var clusterLaunchCmd = &cobra.Command{
     fmt.Println("\nCluster launched.\n")
     fmt.Println("== Cluster details ==")
     fmt.Println(cluster.GetDetails() + "\n")
-    fmt.Println("\nAccess via:\n\n\tssh " + cluster.Master.Username() + "@" + cluster.Master.AccessIP())
+    ip := cluster.Master.AccessIP()
+    if ip == "" {
+      ip = cluster.Master.PrivateIP()
+    }
+    fmt.Println("\nAccess via:\n\n\tssh " + cluster.Master.Username() + "@" + ip)
     return nil
   },
 }
