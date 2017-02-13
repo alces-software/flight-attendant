@@ -89,6 +89,7 @@ var ConfigDefaults = map[string]string {
   "queue-instance-override": "",
   "compute-spot-price": "0.5",
   "compute-autoscaling-policy": "enabled",
+  "compute-group-label": "",
   "compute-initial-nodes": "1",
   "compute-system-volume-type": "magnetic.standard",
 
