@@ -63,7 +63,7 @@ var InstanceTypes []string = []string{
   "m4.4xlarge-16C-64GB",
   "m4.10xlarge-40C-160GB",
   "m4.16xlarge-64C-256GB",
-  "p2.xlarge-4GPU-4C-61GB",
+  "p2.xlarge-1GPU-4C-61GB",
   "p2.8xlarge-8GPU-32C-488GB",
   "p2.16xlarge-16GPU-64C-732GB",
   "r3.large-2C-15.25GB",
@@ -141,6 +141,7 @@ var DomainParameters = map[string]string {
   "PeerVPCCIDRBlock": "%PEER_VPC_CIDR_BLOCK%",
   "AllowInternetAccess": "%ALLOW_INTERNET_ACCESS%",
   "VPNCustomerGateway": "%VPN_CUSTOMER_GATEWAY%",
+  "DomainNetworkPrefix": "%DOMAIN_NETWORK_PREFIX%",
 }
 
 var ClusterComputeParameters = map[string]string {
@@ -173,10 +174,16 @@ var ClusterComputeParameters = map[string]string {
 
   "ClusterUUID": "%CLUSTER_UUID%",
   "ClusterSecurityToken": "%CLUSTER_SECURITY_TOKEN%",
+
+  "ScratchConfiguration": "%SCRATCH_CONFIGURATION%",
+  "SwapConfiguration": "%SWAP_CONFIGURATION%",
+  "SwapSize": "%SWAP_SIZE%",
+  "SwapSizeMax": "%SWAP_SIZE_MAX%",
 }
 
 var ClusterNetworkParameters = map[string]string {
   "FlightVPC": "%VPC%",
+  "Domain": "%DOMAIN%",
   "NetworkingPool": "%NETWORK_POOL%",
   "NetworkingIndex": "%NETWORK_INDEX%",
   "PubRouteTable": "%PUB_ROUTE_TABLE%",
@@ -215,6 +222,11 @@ var ClusterMasterParameters = map[string]string {
   "NetworkingIndex": "%NETWORK_INDEX%",
   "PrvSubnet": "%PRV_SUBNET%",
   "AllowInternetAccess": "%ALLOW_INTERNET_ACCESS%",
+
+  "ScratchConfiguration": "%SCRATCH_CONFIGURATION%",
+  "SwapConfiguration": "%SWAP_CONFIGURATION%",
+  "SwapSize": "%SWAP_SIZE%",
+  "SwapSizeMax": "%SWAP_SIZE_MAX%",
 }
 
 var DomainApplianceParameters = map[string]string {
@@ -280,6 +292,10 @@ var SoloParameters = map[string]string {
   "HomeVolumeType": "%MASTER_HOME_VOLUME_TYPE%",
   "AppsVolumeType": "%MASTER_APPS_VOLUME_TYPE%",
   "ComputeSystemVolumeType": "%COMPUTE_SYSTEM_VOLUME_TYPE%",
+  "ScratchConfiguration": "%SCRATCH_CONFIGURATION%",
+  "SwapConfiguration": "%SWAP_CONFIGURATION%",
+  "SwapSize": "%SWAP_SIZE%",
+  "SwapSizeMax": "%SWAP_SIZE_MAX%",
 }
 
 var ParameterSets = map[string]*map[string]string {

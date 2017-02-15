@@ -93,10 +93,16 @@ var ConfigDefaults = map[string]string {
   "compute-initial-nodes": "1",
   "compute-system-volume-type": "magnetic.standard",
 
+  "swap-size": "0",
+  "swap-size-max": "16384",
+  "swap-configuration": "enabled.ephemeral",
+  "scratch-configuration": "enabled.xfs",
+
   "peer-vpc": "",
   "peer-vpc-route-table": "",
   "peer-vpc-cidr-block": "",
   "vpn-customer-gateway": "",
+  "domain-network-prefix": "10.75",
 
   "allow-internet-access": "1",
 }
