@@ -51,7 +51,7 @@ var soloClusterTemplate = "solo-cluster.json"
 
 var MasterInstanceTypes = []string{
   "small-t2.large",
-  "medium-r3.2xlarge",
+  "medium-r4.2xlarge",
   "large-c4.8xlarge",
   "gpu-g2.2xlarge",
   "enterprise-x1.32xlarge",
@@ -70,10 +70,11 @@ var ComputeInstanceTypes = []string{
   "balanced-8C-32GB.medium-m4.2xlarge",
   "balanced-16C-64GB.large-m4.4xlarge",
   "balanced-40C-160GB.dedicated-m4.10xlarge",
-  "memory-4C-30GB.small-r3.xlarge",
-  "memory-8C-60GB.medium-r3.2xlarge",
-  "memory-16C-120GB.large-r3.4xlarge",
-  "memory-32C-240GB.dedicated-r3.8xlarge",
+  "memory-4C-30GB.small-r4.xlarge",
+  "memory-8C-60GB.medium-r4.2xlarge",
+  "memory-16C-120GB.large-r4.4xlarge",
+  "memory-32C-240GB.xlarge-r4.8xlarge",
+  "memory-64C-480GB.dedicated-r4.16xlarge",
   "gpu-1GPU-8C-15GB.small-g2.2xlarge",
   "gpu-4GPU-32C-60GB.medium-g2.8xlarge",
   "gpu-8GPU-32C-488GB.large-p2.8xlarge",
@@ -400,7 +401,25 @@ func (c *Cluster) GetDetails() string {
       details += "\nQueues: "
       stackNames := []string{}
       for _, stack := range computeGroupStacks {
-        stackNames = append(stackNames, *stack.StackName)
+        // split after first `compute-`
+        var queueName, spotDetails string
+        queueNameParts := strings.SplitAfterN(*stack.StackName, "-compute-", 2)
+        if len(queueNameParts) > 1 {
+          queueName = queueNameParts[1]
+        } else {
+          queueName = queueNameParts[0]
+        }
+        instanceType := getStackParameter(stack, "ComputeInstanceType")
+        if instanceType == "other" {
+          instanceType = getStackParameter(stack, "ComputeInstanceTypeOther")
+        }
+        spotPrice := getStackParameter(stack, "ComputeSpotPrice")
+        if spotPrice != "0" {
+          spotDetails = "<= $" + spotPrice
+        } else {
+          spotDetails = "on-demand"
+        }
+        stackNames = append(stackNames, fmt.Sprintf("%s (%s, %s)", queueName, instanceType, spotDetails))
       }
       details += strings.Join(stackNames, ", ") + "\n"
     }

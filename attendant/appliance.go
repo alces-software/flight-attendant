@@ -35,8 +35,8 @@ import (
 
   "github.com/spf13/viper"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/cloudformation"
+  "github.com/aws/aws-sdk-go/aws"
+  "github.com/aws/aws-sdk-go/service/cloudformation"
 )
 
 type Appliance struct {
@@ -62,6 +62,7 @@ var ApplianceResourceCounts = map[string]int {
 
 var ApplianceInstanceTypes = []string{
   "small-t2.large",
+  "small-c3.large",
   "medium-r3.large",
   "large-c4.8xlarge",
 }
@@ -80,7 +81,7 @@ func IsValidApplianceType(applianceType string) bool {
 }
 
 func (a *Appliance) Create() error {
-	svc, err := CloudFormation()
+  svc, err := CloudFormation()
   if err != nil { return err }
 
   url := TemplateUrl(ApplianceTemplates[a.Name])
@@ -126,7 +127,7 @@ func (a Appliance) processQueue(qArn *string) {
 }
 
 func (a Appliance) Destroy() error {
-	svc, err := CloudFormation()
+  svc, err := CloudFormation()
   if err != nil { return err }
 
   stackName := fmt.Sprintf("flight-%s-%s", a.Domain.Name, a.Name)
