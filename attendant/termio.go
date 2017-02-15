@@ -111,7 +111,7 @@ func createHandlerFunction(resourceTotal int, inProgressText, completeText, comp
       disableCounters = false
       return
     }
-    s := strings.Split(msg, " ")
+    s := strings.Split(strings.TrimSpace(msg), " ")
     state := s[0]
     res := s[1] + " " + s[2]
     name := s[1]
