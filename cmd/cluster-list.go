@@ -124,10 +124,10 @@ func init() {
 func printClusters(status *attendant.DomainStatus) {
   if len(status.Clusters) > 0 {
     for _, cluster := range status.Clusters {
+      var details string
+      attendant.SpinWithSuffix(func() { details = cluster.GetDetails() }, attendant.Config().AwsRegion + ": " + cluster.Domain.Name + "/" + cluster.Name)
       fmt.Println("    " + cluster.Name)
       fmt.Println("    " + strings.Repeat("-", len(cluster.Name)))
-      var details string
-      attendant.SpinWithSuffix(func() { details = cluster.GetDetails() }, attendant.Config().AwsRegion + ": " + cluster.Name)
       for _, s := range strings.Split(details,"\n") {
         fmt.Println("    " + s)
       }

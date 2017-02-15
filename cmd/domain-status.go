@@ -82,7 +82,7 @@ var domainStatusCmd = &cobra.Command{
 
 func init() {
   domainCmd.AddCommand(domainStatusCmd)
-  domainStatusCmd.Flags().Bool("all", false, "Show all domains")
+  domainStatusCmd.Flags().BoolP("all", "a", false, "Show all domains")
   domainStatusCmd.Flags().Bool("show-vpn-config", false, "Display VPN configuration details in a YAML format")
   domainStatusCmd.Flags().String("regions", "", "Select regions to query")
 }
@@ -157,9 +157,11 @@ func statusFor(domain *attendant.Domain) {
   fmt.Println("== Clusters ==\n")
   if len(status.Clusters) > 0 {
     for _, cluster := range status.Clusters {
+      var details string
+      attendant.SpinWithSuffix(func() { details = cluster.GetDetails() }, attendant.Config().AwsRegion + ": " + domain.Name + "/" + cluster.Name)
       fmt.Println("    " + cluster.Name)
       fmt.Println("    " + strings.Repeat("-", len(cluster.Name)))
-      for _, s := range strings.Split(cluster.GetDetails(),"\n") {
+      for _, s := range strings.Split(details,"\n") {
         fmt.Println("    " + s)
       }
     }
