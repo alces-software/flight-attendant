@@ -66,10 +66,27 @@ var clusterQstatCmd = &cobra.Command{
       if len(cluster.ComputeGroups) == 0 {
         return fmt.Errorf("No compute queues running on cluster: %s/%s (%s)", cluster.Domain.Name, cluster.Name, attendant.Config().AwsRegion)
       }
-      fmt.Println("== " + cluster.Domain.Name + "/" + cluster.Name + " (" + attendant.Config().AwsRegion + ") ==")
-      for  _, group := range cluster.ComputeGroups {
-        fmt.Println()
-        showGroupDetails(group)
+      if len(args) > 1 {
+        var foundGroup *attendant.ComputeGroup
+        for  _, group := range cluster.ComputeGroups {
+          if group.Name == args[1] {
+            foundGroup = group
+            break
+          }
+        }
+        if foundGroup != nil {
+          fmt.Println("== " + cluster.Domain.Name + "/" + cluster.Name + " (" + attendant.Config().AwsRegion + ") ==")
+          fmt.Println()
+          showGroupDetails(foundGroup)
+        } else {
+          return fmt.Errorf("No compute queue named '%s' running on cluster: %s/%s (%s)", args[1], cluster.Domain.Name, cluster.Name, attendant.Config().AwsRegion)
+        }
+      } else {
+        fmt.Println("== " + cluster.Domain.Name + "/" + cluster.Name + " (" + attendant.Config().AwsRegion + ") ==")
+        for  _, group := range cluster.ComputeGroups {
+          fmt.Println()
+          showGroupDetails(group)
+        }
       }
       return nil
     } else {
