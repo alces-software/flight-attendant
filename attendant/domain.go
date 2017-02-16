@@ -185,7 +185,7 @@ func (d *Domain) Status() (*DomainStatus, error) {
             idx, _ := strconv.Atoi(getStackTag(stack,"flight:network"))
             cluster.Network = &ClusterNetwork{idx, stack}
           } else if stackType == "compute" {
-            cluster.ComputeGroups = append(cluster.ComputeGroups, &ComputeGroup{stack})
+            cluster.ComputeGroups = append(cluster.ComputeGroups, computeGroupFromStack(stack))
           }
         case "appliance":
           applianceName := getStackTag(stack, "flight:appliance")

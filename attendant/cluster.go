@@ -39,6 +39,7 @@ import (
 
   "github.com/aws/aws-sdk-go/aws"
   "github.com/aws/aws-sdk-go/aws/awserr"
+  "github.com/aws/aws-sdk-go/service/autoscaling"
   "github.com/aws/aws-sdk-go/service/cloudformation"
 
   "gopkg.in/yaml.v2"
@@ -171,6 +172,11 @@ func (m *Master) ClusterSecurityToken() string {
 
 type ComputeGroup struct {
   Stack *cloudformation.Stack
+  Name string
+  InstanceType string
+  Pricing string
+  ResourceName string
+  _AutoscalingGroup *autoscaling.Group
 }
 
 func NewCluster(name string, domain *Domain, handler func(msg string)) *Cluster {
@@ -339,11 +345,11 @@ func (c *Cluster) Destroy() error {
     c.MessageHandler("ENABLE-COUNTERS")
 
     // get compute group stacks and destroy them next
-    computeGroupStacks, _ := getComputeGroupStacksForCluster(c)
+    c.LoadComputeGroups()
     if err != nil { return err }
-    c.MessageHandler(fmt.Sprintf("COUNTERS=%d",ClusterResourceCount + (ComputeGroupResourceCount * len(computeGroupStacks))))
-    for _, stack := range computeGroupStacks {
-      err = destroyStack(svc, *stack.StackName)
+    c.MessageHandler(fmt.Sprintf("COUNTERS=%d",ClusterResourceCount + (ComputeGroupResourceCount * len(c.ComputeGroups))))
+    for _, group := range c.ComputeGroups {
+      err = destroyStack(svc, *group.Stack.StackName)
       if err != nil { return err }
     }
 
@@ -367,6 +373,52 @@ func (c *Cluster) Destroy() error {
   return nil
 }
 
+func (c *Cluster) Exists() bool {
+  if c.Master == nil {
+    if svc, err := CloudFormation(); err == nil {
+      if masterStack, err := getStack(svc, "flight-" + c.Domain.Name + "-" + c.Name + "-master"); err == nil {
+        c.Master = &Master{masterStack}
+      }
+    }
+  }
+  return c.Master != nil
+}
+
+func (c *Cluster) LoadComputeGroups() error {
+  stacks, err := getComputeGroupStacksForCluster(c)
+  if err != nil { return err }
+  for _, stack := range stacks {
+    c.ComputeGroups = append(c.ComputeGroups, computeGroupFromStack(stack))
+  }
+  return nil
+}
+
+func computeGroupFromStack(stack *cloudformation.Stack) *ComputeGroup {
+  // split after first `compute-`
+  var queueName, pricing, resourceName string
+  queueNameParts := strings.SplitAfterN(*stack.StackName, "-compute-", 2)
+  if len(queueNameParts) > 1 {
+    queueName = queueNameParts[1]
+  } else {
+    queueName = queueNameParts[0]
+  }
+  instanceType := getStackParameter(stack, "ComputeInstanceType")
+  if instanceType == "other" {
+    instanceType = getStackParameter(stack, "ComputeInstanceTypeOther")
+  }
+  spotPrice := getStackParameter(stack, "ComputeSpotPrice")
+  if spotPrice != "0" {
+    pricing = "<= $" + spotPrice + "/h"
+  } else {
+    pricing = "on-demand"
+  }
+  autoscalingResource, _ := getAutoscalingResource(stack)
+  if autoscalingResource != nil {
+    resourceName = *autoscalingResource.PhysicalResourceId
+  }
+  return &ComputeGroup{stack,queueName,instanceType,pricing,resourceName,nil}
+}
+
 func (c *Cluster) GetDetails() string {
   if c.Master == nil {
     if svc, err := CloudFormation(); err == nil {
@@ -386,7 +438,7 @@ func (c *Cluster) GetDetails() string {
     if url == "" {
       url = getStackOutput(c.Master.Stack, "PrivateWebAccess")
     }
-    computeGroupStacks, _ := getComputeGroupStacksForCluster(c)
+    c.LoadComputeGroups()
     componentStacks, _ := getComponentStacksForCluster(c)
     uuid := getStackConfigValue(c.Master.Stack, "UUID")
     if uuid == "" { uuid = "<unknown>" }
@@ -397,31 +449,13 @@ func (c *Cluster) GetDetails() string {
       details += "\nAccess URL: " + url
     }
     details += fmt.Sprintf("\nUUID: %s\nToken: %s\n", uuid, token)
-    if (len(computeGroupStacks) > 0) {
+    if (len(c.ComputeGroups) > 0) {
       details += "\nQueues: "
-      stackNames := []string{}
-      for _, stack := range computeGroupStacks {
-        // split after first `compute-`
-        var queueName, spotDetails string
-        queueNameParts := strings.SplitAfterN(*stack.StackName, "-compute-", 2)
-        if len(queueNameParts) > 1 {
-          queueName = queueNameParts[1]
-        } else {
-          queueName = queueNameParts[0]
-        }
-        instanceType := getStackParameter(stack, "ComputeInstanceType")
-        if instanceType == "other" {
-          instanceType = getStackParameter(stack, "ComputeInstanceTypeOther")
-        }
-        spotPrice := getStackParameter(stack, "ComputeSpotPrice")
-        if spotPrice != "0" {
-          spotDetails = "<= $" + spotPrice
-        } else {
-          spotDetails = "on-demand"
-        }
-        stackNames = append(stackNames, fmt.Sprintf("%s (%s, %s)", queueName, instanceType, spotDetails))
+      queueDetails := []string{}
+      for _, group := range c.ComputeGroups {
+        queueDetails = append(queueDetails, fmt.Sprintf("%s (%s, %s)", group.Name, group.InstanceType, group.Pricing))
       }
-      details += strings.Join(stackNames, ", ") + "\n"
+      details += strings.Join(queueDetails, ", ") + "\n"
     }
     if (len(componentStacks) > 0) {
       details += "\nComponents: "
@@ -435,6 +469,34 @@ func (c *Cluster) GetDetails() string {
   } else {
     return "(Incomplete)"
   }
+}
+
+func (g *ComputeGroup) loadAutoscalingGroup() {
+  g._AutoscalingGroup, _ = describeAutoscalingGroup(g.ResourceName)
+}
+
+func (g *ComputeGroup) MaxSize() int {
+  if g._AutoscalingGroup == nil { g.loadAutoscalingGroup() }
+  if g._AutoscalingGroup == nil { return 0 }
+  return int(*g._AutoscalingGroup.MaxSize)
+}
+
+func (g *ComputeGroup) MinSize() int {
+  if g._AutoscalingGroup == nil { g.loadAutoscalingGroup() }
+  if g._AutoscalingGroup == nil { return 0 }
+  return int(*g._AutoscalingGroup.MinSize)
+}
+
+func (g *ComputeGroup) DesiredCapacity() int {
+  if g._AutoscalingGroup == nil { g.loadAutoscalingGroup() }
+  if g._AutoscalingGroup == nil { return 0 }
+  return int(*g._AutoscalingGroup.DesiredCapacity)
+}
+
+func (g *ComputeGroup) Running() int {
+  if g._AutoscalingGroup == nil { g.loadAutoscalingGroup() }
+  if g._AutoscalingGroup == nil { return 0 }
+  return len(g._AutoscalingGroup.Instances)
 }
 
 func destroyComputeGroup(cluster *Cluster, queueName string, svc *cloudformation.CloudFormation) error {
@@ -546,7 +608,7 @@ func createComputeGroup(cluster *Cluster, queueName, queueParamsFile string, svc
   stack, err := createStack(svc, launchParams, cluster.Tags(), url, stackName, "compute", cluster.TopicARN, cluster.Domain)
   if err != nil { return err }
 
-  cluster.ComputeGroups = append(cluster.ComputeGroups, &ComputeGroup{stack})
+  cluster.ComputeGroups = append(cluster.ComputeGroups, computeGroupFromStack(stack))
   return nil
 }
 

@@ -36,6 +36,7 @@ import (
   "github.com/aws/aws-sdk-go/aws/awserr"
   "github.com/aws/aws-sdk-go/aws/session"
   "github.com/aws/aws-sdk-go/aws/credentials"
+  "github.com/aws/aws-sdk-go/service/autoscaling"
   "github.com/aws/aws-sdk-go/service/cloudformation"
   "github.com/aws/aws-sdk-go/service/ec2"
   "github.com/aws/aws-sdk-go/service/sns"
@@ -113,6 +114,12 @@ func SQS() (*sqs.SQS, error) {
   sess, err := AwsSession()
   if err != nil { return nil, err }
   return sqs.New(sess), nil
+}
+
+func AutoScaling() (*autoscaling.AutoScaling, error) {
+  sess, err := AwsSession()
+  if err != nil { return nil, err }
+  return autoscaling.New(sess), nil
 }
 
 func IsValidKeyPairName(name string) bool {
@@ -602,4 +609,35 @@ func describeVPNConnection(connectionId string) (*string, error) {
   })
   if err != nil { return nil, err }
   return resp.VpnConnections[0].CustomerGatewayConfiguration, nil
+}
+
+func describeAutoscalingGroup(name string) (*autoscaling.Group, error) {
+  svc, err := AutoScaling()
+  if err != nil { return nil, err }
+  resp, err := svc.DescribeAutoScalingGroups(&autoscaling.DescribeAutoScalingGroupsInput{
+    AutoScalingGroupNames: []*string{aws.String(name)},
+  })
+  if err != nil { return nil, err }
+  return resp.AutoScalingGroups[0], nil
+}
+
+func getStackResources(stack *cloudformation.Stack) ([]*cloudformation.StackResourceSummary, error) {
+  svc, err := CloudFormation()
+  if err != nil { return nil, err }
+  resp, err := svc.ListStackResources(&cloudformation.ListStackResourcesInput{
+    StackName: stack.StackName,
+  })
+  if err != nil { return nil, err }
+  return resp.StackResourceSummaries, nil
+}
+
+func getAutoscalingResource(stack *cloudformation.Stack) (*cloudformation.StackResourceSummary, error) {
+  resources, err := getStackResources(stack)
+  if err != nil { return nil, err }
+  for _, res := range resources {
+    if *res.ResourceType == "AWS::AutoScaling::AutoScalingGroup" {
+      return res, nil
+    }
+  }
+  return nil, fmt.Errorf("Autoscaling resource not found for stack: %s", *stack.StackName)
 }

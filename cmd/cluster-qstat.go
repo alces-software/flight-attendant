@@ -1,4 +1,4 @@
-// Copyright © 2016 Alces Software Ltd <support@alces-software.com>
+// Copyright © 2017 Alces Software Ltd <support@alces-software.com>
 // This file is part of Flight Attendant.
 //
 // This program is free software: you can redistribute it and/or modify
@@ -31,17 +31,17 @@ package cmd
 import (
   "fmt"
   "strings"
-  
+
   "github.com/spf13/cobra"
   
   "github.com/alces-software/flight-attendant/attendant"
 )
 
 // launchCmd represents the launch command
-var clusterShowCmd = &cobra.Command{
-  Use:   "show <name>",
-  Short: "Show details of a running Flight Compute cluster",
-  Long: `Show details of a running Flight Compute cluster.`,
+var clusterQstatCmd = &cobra.Command{
+  Use:   "qstat <cluster> [<name>]",
+  Short: "Query for information about a compute queue on a running Flight Compute cluster",
+  Long: `Query for information about a compute queue on a running Flight Compute cluster.`,
   SilenceUsage: true,
   RunE: func(cmd *cobra.Command, args []string) error {
     if len(args) < 1 {
@@ -52,19 +52,25 @@ var clusterShowCmd = &cobra.Command{
     var domain *attendant.Domain
     var err error
 
-    domain, err = findDomain("clusterShow", false)
+    domain, err = findDomain("clusterQstat", false)
     if err != nil { return err }
 
     cluster := attendant.NewCluster(args[0], domain, nil)
     var exists bool
-    attendant.SpinWithSuffix(func() { exists = cluster.Exists() }, attendant.Config().AwsRegion + ": " + cluster.Domain.Name + "/" + cluster.Name)
+    attendant.SpinWithSuffix(func() {
+      exists = cluster.Exists()
+      if exists { err = cluster.LoadComputeGroups() }
+    }, attendant.Config().AwsRegion + ": " + cluster.Domain.Name + "/" + cluster.Name)
     if exists {
-      fmt.Println(cluster.Name)
-      fmt.Println(strings.Repeat("-", len(cluster.Name)))
-
-      var details string
-      attendant.SpinWithSuffix(func() { details = cluster.GetDetails() }, attendant.Config().AwsRegion + ": " + cluster.Domain.Name + "/" + cluster.Name)
-      fmt.Println(details)
+      if err != nil { return err }
+      if len(cluster.ComputeGroups) == 0 {
+        return fmt.Errorf("No compute queues running on cluster: %s/%s (%s)", cluster.Domain.Name, cluster.Name, attendant.Config().AwsRegion)
+      }
+      fmt.Println("== " + cluster.Domain.Name + "/" + cluster.Name + " (" + attendant.Config().AwsRegion + ") ==")
+      for  _, group := range cluster.ComputeGroups {
+        fmt.Println()
+        showGroupDetails(group)
+      }
       return nil
     } else {
       return fmt.Errorf("Cluster not found: %s/%s (%s)", cluster.Domain.Name, cluster.Name, attendant.Config().AwsRegion)
@@ -73,7 +79,17 @@ var clusterShowCmd = &cobra.Command{
 }
 
 func init() {
-  clusterCmd.AddCommand(clusterShowCmd)
-  addDomainFlag(clusterShowCmd, "clusterShow")
+  clusterCmd.AddCommand(clusterQstatCmd)
+  addDomainFlag(clusterQstatCmd, "clusterQstat")
 }
 
+func showGroupDetails(group *attendant.ComputeGroup) {
+  fmt.Println("    " + group.Name)
+  fmt.Println("    " + strings.Repeat("-", len(group.Name)))
+  fmt.Println("        Type: " + group.InstanceType)
+  fmt.Println("     Pricing: " + group.Pricing)
+  fmt.Printf("    Capacity: %d-%d\n", group.MinSize(), group.MaxSize())
+  fmt.Printf("     Running: %d\n", group.Running())
+  fmt.Printf("     Pending: %d\n", group.DesiredCapacity() - group.Running())
+  // fmt.Printf("    Resource: %s\n", group.ResourceName)
+}
