@@ -126,6 +126,22 @@ func (a Appliance) processQueue(qArn *string) {
   }
 }
 
+func (a Appliance) Purge() error {
+  svc, err := CloudFormation()
+  if err != nil { return err }
+
+  stackName := fmt.Sprintf("flight-%s-%s", a.Domain.Name, a.Name)
+  if err != nil { return err }
+
+  err = destroyStack(svc, stackName)
+  if err != nil { return err }
+
+  err = cleanupEventHandling(stackName)
+  if err != nil { return err }
+
+  return err
+}
+
 func (a Appliance) Destroy() error {
   svc, err := CloudFormation()
   if err != nil { return err }

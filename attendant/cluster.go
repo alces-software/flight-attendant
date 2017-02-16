@@ -314,6 +314,69 @@ func (c *Cluster) Reduce(componentType, componentName string) error {
   return nil
 }
 
+func (c *Cluster) Purge() error {
+  svc, err := CloudFormation()
+
+  if err != nil { return err }
+  var ch chan string = make(chan string)
+  // purge components
+  componentStacks, err := getComponentStacksForCluster(c)
+  if err != nil { return err }
+  for _, stack := range componentStacks {
+    go func(stack *cloudformation.Stack, ch chan<- string) {
+      n := fmt.Sprintf("%s %s", *stack.StackName, *stack.StackName)
+      c.MessageHandler("DELETE_IN_PROGRESS " + n)
+      destroyStack(svc, *stack.StackName)
+      ch <- *stack.StackName
+    }(stack, ch)
+  }
+
+  // purge compute groups
+  c.LoadComputeGroups()
+  for _, group := range c.ComputeGroups {
+    go func(stack *cloudformation.Stack, ch chan<- string) {
+      n := fmt.Sprintf("%s %s", *stack.StackName, *stack.StackName)
+      c.MessageHandler("DELETE_IN_PROGRESS " + n)
+      destroyStack(svc, *stack.StackName)
+      ch <- *stack.StackName
+    }(group.Stack, ch)
+  }
+
+  // purge master
+  go func(ch chan<- string) {
+    n := fmt.Sprintf("%s %s", *c.Master.Stack.StackName, *c.Master.Stack.StackName)
+    c.MessageHandler("DELETE_IN_PROGRESS " + n)
+    destroyMaster(c, svc)
+    ch <- *c.Master.Stack.StackName
+  }(ch)
+
+  count := len(componentStacks) + len(c.ComputeGroups) + 1
+  for item := <- ch; item != ""; item = <- ch {
+    c.MessageHandler("DELETE_COMPLETE " + item + " " + item)
+    count -= 1
+    if count == 0 {
+      break
+    }
+  }
+
+  // have to wait until everything else is destroyed before destroing the network
+  n := fmt.Sprintf("%s %s", *c.Network.Stack.StackName, *c.Network.Stack.StackName)
+  c.MessageHandler("DELETE_IN_PROGRESS " + n)
+  destroyClusterNetwork(c, svc)
+  c.MessageHandler("DELETE_COMPLETE " + n)
+
+  err = cleanupEventHandling("flight-" + c.Domain.Name + "-cluster-" + c.Name)
+  if err != nil { return err }
+
+  entity, err := c.LoadEntity()
+  if err != nil { return err }
+  err = c.Domain.ReleaseNetwork(entity.NetworkIndex)
+  if err != nil { return err }
+  c.DestroyEntity()
+
+  return nil
+}
+
 func (c *Cluster) Destroy() error {
   svc, err := CloudFormation()
   if err != nil { return err }
@@ -385,6 +448,9 @@ func (c *Cluster) Exists() bool {
 }
 
 func (c *Cluster) LoadComputeGroups() error {
+  if len(c.ComputeGroups) > 0 {
+    return nil
+  }
   stacks, err := getComputeGroupStacksForCluster(c)
   if err != nil { return err }
   for _, stack := range stacks {
