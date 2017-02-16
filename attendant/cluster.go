@@ -1,4 +1,4 @@
-// Copyright © 2016 Alces Software Ltd <support@alces-software.com>
+// Copyright © 2016-2017 Alces Software Ltd <support@alces-software.com>
 // This file is part of Flight Attendant.
 //
 // This program is free software: you can redistribute it and/or modify
@@ -35,11 +35,12 @@ import (
   "strings"
   "time"
 
-	"github.com/spf13/viper"
+  "github.com/spf13/viper"
 
   "github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/service/cloudformation"
+  "github.com/aws/aws-sdk-go/aws/awserr"
+  "github.com/aws/aws-sdk-go/service/autoscaling"
+  "github.com/aws/aws-sdk-go/service/cloudformation"
 
   "gopkg.in/yaml.v2"
 )
@@ -51,7 +52,7 @@ var soloClusterTemplate = "solo-cluster.json"
 
 var MasterInstanceTypes = []string{
   "small-t2.large",
-  "medium-r3.2xlarge",
+  "medium-r4.2xlarge",
   "large-c4.8xlarge",
   "gpu-g2.2xlarge",
   "enterprise-x1.32xlarge",
@@ -70,10 +71,11 @@ var ComputeInstanceTypes = []string{
   "balanced-8C-32GB.medium-m4.2xlarge",
   "balanced-16C-64GB.large-m4.4xlarge",
   "balanced-40C-160GB.dedicated-m4.10xlarge",
-  "memory-4C-30GB.small-r3.xlarge",
-  "memory-8C-60GB.medium-r3.2xlarge",
-  "memory-16C-120GB.large-r3.4xlarge",
-  "memory-32C-240GB.dedicated-r3.8xlarge",
+  "memory-4C-30GB.small-r4.xlarge",
+  "memory-8C-60GB.medium-r4.2xlarge",
+  "memory-16C-120GB.large-r4.4xlarge",
+  "memory-32C-240GB.xlarge-r4.8xlarge",
+  "memory-64C-480GB.dedicated-r4.16xlarge",
   "gpu-1GPU-8C-15GB.small-g2.2xlarge",
   "gpu-4GPU-32C-60GB.medium-g2.8xlarge",
   "gpu-8GPU-32C-488GB.large-p2.8xlarge",
@@ -85,8 +87,9 @@ var ComputeInstanceTypes = []string{
 // network: 19 (18)
 // master: 16 (15)
 // compute: 10 (9)
-var ClusterResourceCount int = 45
+var ClusterResourceCount int = 35
 var SoloClusterResourceCount int = 46
+var ComputeGroupResourceCount int = 10
 
 func IsValidComputeInstanceType(instanceType string) bool {
   return containsS(ComputeInstanceTypes, instanceType)
@@ -169,6 +172,11 @@ func (m *Master) ClusterSecurityToken() string {
 
 type ComputeGroup struct {
   Stack *cloudformation.Stack
+  Name string
+  InstanceType string
+  Pricing string
+  ResourceName string
+  _AutoscalingGroup *autoscaling.Group
 }
 
 func NewCluster(name string, domain *Domain, handler func(msg string)) *Cluster {
@@ -191,8 +199,8 @@ func (c *Cluster) Tags() []*cloudformation.Tag {
   }
 }
 
-func (c *Cluster) Create() error {
-	svc, err := CloudFormation()
+func (c *Cluster) Create(withQ bool) error {
+  svc, err := CloudFormation()
   if err != nil { return err }
 
   if c.Domain == nil {
@@ -214,18 +222,58 @@ func (c *Cluster) Create() error {
     // create master node
     err = createMaster(c, svc)
     if err != nil { return err }
-    // create compute group(s)
-    err = createComputeGroup(c, svc)
-    if err != nil { return err }
   }
 
   c.MessageHandler("DONE")
 
+  if withQ {
+    err = c.AddQueue("default", "")
+    if err != nil { return err }
+  }
+  return nil
+}
+
+func (c *Cluster) AddQueue(queueName, queueParamsFile string) error {
+  svc, err := CloudFormation()
+  if err != nil { return err }
+
+  // Load some cluster information, specifically Network
+  networkStack, err := getStack(svc, "flight-" + c.Domain.Name + "-" + c.Name + "-network")
+  if err != nil { return err }
+  idx, err := strconv.Atoi(getStackTag(networkStack, "flight:network"))
+  if err != nil { return err }
+  c.Network = &ClusterNetwork{idx, networkStack}
+  masterStack, err := getStack(svc, "flight-" + c.Domain.Name + "-" + c.Name + "-master")
+  if err != nil { return err }
+  c.Master = &Master{masterStack}
+
+  tArn, qUrl, err := setupEventHandling("flight-" + c.Domain.Name + "-cluster-" + c.Name)
+  if err != nil { return err }
+  go c.processQueue(qUrl)
+  c.TopicARN = *tArn
+
+  // create compute group(s)
+  err = createComputeGroup(c, queueName, queueParamsFile, svc)
+  if err != nil { return err }
+  c.MessageHandler("DONE")
+  return nil
+}
+
+func (c *Cluster) DestroyQueue(queueName string) error {
+  svc, err := CloudFormation()
+  if err != nil { return err }
+  qUrl, err := getEventQueueUrl("flight-" + c.Domain.Name + "-cluster-" + c.Name)
+  if err != nil { return err }
+  go c.processQueue(qUrl)
+
+  err = destroyComputeGroup(c, queueName, svc)
+  if err != nil { return err }
+  c.MessageHandler("DONE")
   return nil
 }
 
 func (c *Cluster) Expand(componentType, componentName, componentParamsFile string) error {
-	svc, err := CloudFormation()
+  svc, err := CloudFormation()
   if err != nil { return err }
 
   // Load some cluster information, specifically Network
@@ -251,7 +299,7 @@ func (c *Cluster) Expand(componentType, componentName, componentParamsFile strin
 }
 
 func (c *Cluster) Reduce(componentType, componentName string) error {
-	svc, err := CloudFormation()
+  svc, err := CloudFormation()
   if err != nil { return err }
 
   tArn, qUrl, err := setupEventHandling("flight-" + c.Domain.Name + "-cluster-" + c.Name)
@@ -267,7 +315,7 @@ func (c *Cluster) Reduce(componentType, componentName string) error {
 }
 
 func (c *Cluster) Destroy() error {
-	svc, err := CloudFormation()
+  svc, err := CloudFormation()
   if err != nil { return err }
   if c.Domain == nil {
     // destroying a solo cluster
@@ -295,8 +343,16 @@ func (c *Cluster) Destroy() error {
       if err != nil { return err }
     }
     c.MessageHandler("ENABLE-COUNTERS")
-    err = destroyComputeGroup(c, 1, svc)
+
+    // get compute group stacks and destroy them next
+    c.LoadComputeGroups()
     if err != nil { return err }
+    c.MessageHandler(fmt.Sprintf("COUNTERS=%d",ClusterResourceCount + (ComputeGroupResourceCount * len(c.ComputeGroups))))
+    for _, group := range c.ComputeGroups {
+      err = destroyStack(svc, *group.Stack.StackName)
+      if err != nil { return err }
+    }
+
     err = destroyMaster(c, svc)
     if err != nil { return err }
     err = destroyClusterNetwork(c, svc)
@@ -317,18 +373,90 @@ func (c *Cluster) Destroy() error {
   return nil
 }
 
+func (c *Cluster) Exists() bool {
+  if c.Master == nil {
+    if svc, err := CloudFormation(); err == nil {
+      if masterStack, err := getStack(svc, "flight-" + c.Domain.Name + "-" + c.Name + "-master"); err == nil {
+        c.Master = &Master{masterStack}
+      }
+    }
+  }
+  return c.Master != nil
+}
+
+func (c *Cluster) LoadComputeGroups() error {
+  stacks, err := getComputeGroupStacksForCluster(c)
+  if err != nil { return err }
+  for _, stack := range stacks {
+    c.ComputeGroups = append(c.ComputeGroups, computeGroupFromStack(stack))
+  }
+  return nil
+}
+
+func computeGroupFromStack(stack *cloudformation.Stack) *ComputeGroup {
+  // split after first `compute-`
+  var queueName, pricing, resourceName string
+  queueNameParts := strings.SplitAfterN(*stack.StackName, "-compute-", 2)
+  if len(queueNameParts) > 1 {
+    queueName = queueNameParts[1]
+  } else {
+    queueName = queueNameParts[0]
+  }
+  instanceType := getStackParameter(stack, "ComputeInstanceType")
+  if instanceType == "other" {
+    instanceType = getStackParameter(stack, "ComputeInstanceTypeOther")
+  }
+  spotPrice := getStackParameter(stack, "ComputeSpotPrice")
+  if spotPrice != "0" {
+    pricing = "<= $" + spotPrice + "/h"
+  } else {
+    pricing = "on-demand"
+  }
+  autoscalingResource, _ := getAutoscalingResource(stack)
+  if autoscalingResource != nil {
+    resourceName = *autoscalingResource.PhysicalResourceId
+  }
+  return &ComputeGroup{stack,queueName,instanceType,pricing,resourceName,nil}
+}
+
 func (c *Cluster) GetDetails() string {
+  if c.Master == nil {
+    if svc, err := CloudFormation(); err == nil {
+      if masterStack, err := getStack(svc, "flight-" + c.Domain.Name + "-" + c.Name + "-master"); err == nil {
+        c.Master = &Master{masterStack}
+      }
+    }
+  }
   if c.Master != nil {
     ip := getStackOutput(c.Master.Stack, "AccessIP")
+    if ip == "" {
+      ip = getStackOutput(c.Master.Stack, "MasterPrivateIP")
+    }
     keypair := getStackParameter(c.Master.Stack, "AccessKeyName")
     username := getStackOutput(c.Master.Stack, "Username")
     url := getStackOutput(c.Master.Stack, "WebAccess")
+    if url == "" {
+      url = getStackOutput(c.Master.Stack, "PrivateWebAccess")
+    }
+    c.LoadComputeGroups()
     componentStacks, _ := getComponentStacksForCluster(c)
     uuid := getStackConfigValue(c.Master.Stack, "UUID")
     if uuid == "" { uuid = "<unknown>" }
     token := getStackConfigValue(c.Master.Stack, "Token")
     if token == "" { token = "<unknown>" }
-    details := fmt.Sprintf("Administrator username: %s\nIP address: %s\nKey pair: %s\nAccess URL: %s\nUUID: %s\nToken: %s\n", ip, keypair, username, url, uuid, token)
+    details := fmt.Sprintf("Administrator username: %s\nIP address: %s\nKey pair: %s", username, ip, keypair)
+    if url != "" {
+      details += "\nAccess URL: " + url
+    }
+    details += fmt.Sprintf("\nUUID: %s\nToken: %s\n", uuid, token)
+    if (len(c.ComputeGroups) > 0) {
+      details += "\nQueues: "
+      queueDetails := []string{}
+      for _, group := range c.ComputeGroups {
+        queueDetails = append(queueDetails, fmt.Sprintf("%s (%s, %s)", group.Name, group.InstanceType, group.Pricing))
+      }
+      details += strings.Join(queueDetails, ", ") + "\n"
+    }
     if (len(componentStacks) > 0) {
       details += "\nComponents: "
       stackNames := []string{}
@@ -343,11 +471,39 @@ func (c *Cluster) GetDetails() string {
   }
 }
 
-func destroyComputeGroup(cluster *Cluster, index int, svc *cloudformation.CloudFormation) error {
-  stackName := fmt.Sprintf("flight-%s-%s-compute-%d",
+func (g *ComputeGroup) loadAutoscalingGroup() {
+  g._AutoscalingGroup, _ = describeAutoscalingGroup(g.ResourceName)
+}
+
+func (g *ComputeGroup) MaxSize() int {
+  if g._AutoscalingGroup == nil { g.loadAutoscalingGroup() }
+  if g._AutoscalingGroup == nil { return 0 }
+  return int(*g._AutoscalingGroup.MaxSize)
+}
+
+func (g *ComputeGroup) MinSize() int {
+  if g._AutoscalingGroup == nil { g.loadAutoscalingGroup() }
+  if g._AutoscalingGroup == nil { return 0 }
+  return int(*g._AutoscalingGroup.MinSize)
+}
+
+func (g *ComputeGroup) DesiredCapacity() int {
+  if g._AutoscalingGroup == nil { g.loadAutoscalingGroup() }
+  if g._AutoscalingGroup == nil { return 0 }
+  return int(*g._AutoscalingGroup.DesiredCapacity)
+}
+
+func (g *ComputeGroup) Running() int {
+  if g._AutoscalingGroup == nil { g.loadAutoscalingGroup() }
+  if g._AutoscalingGroup == nil { return 0 }
+  return len(g._AutoscalingGroup.Instances)
+}
+
+func destroyComputeGroup(cluster *Cluster, queueName string, svc *cloudformation.CloudFormation) error {
+  stackName := fmt.Sprintf("flight-%s-%s-compute-%s",
     cluster.Domain.Name,
     cluster.Name,
-    index)
+    queueName)
 
   return destroyStack(svc, stackName)
 }
@@ -435,19 +591,24 @@ func loadParameterSet(componentName string, defaultParameterSet map[string]strin
   return defaultParameterSet
 }
 
-func createComputeGroup(cluster *Cluster, svc *cloudformation.CloudFormation) error {
-  launchParams := createClusterComponentLaunchParameters(cluster,
-    loadParameterSet("cluster-compute", ClusterComputeParameters))
-  stackName := fmt.Sprintf("flight-%s-%s-compute-%d",
+func createComputeGroup(cluster *Cluster, queueName, queueParamsFile string, svc *cloudformation.CloudFormation) error {
+  var defaultLaunchParams map[string]string
+  if queueParamsFile == "" {
+    defaultLaunchParams = loadParameterSet("cluster-compute", ClusterComputeParameters)
+  } else {
+    defaultLaunchParams = loadComponentParameters(queueParamsFile)
+  }
+  launchParams := createClusterComponentLaunchParameters(cluster, defaultLaunchParams)
+  stackName := fmt.Sprintf("flight-%s-%s-compute-%s",
     cluster.Domain.Name,
     cluster.Name,
-    len(cluster.ComputeGroups) + 1)
+    queueName)
   url := TemplateUrl(clusterComputeTemplate)
 
   stack, err := createStack(svc, launchParams, cluster.Tags(), url, stackName, "compute", cluster.TopicARN, cluster.Domain)
   if err != nil { return err }
 
-  cluster.ComputeGroups = append(cluster.ComputeGroups, &ComputeGroup{stack})
+  cluster.ComputeGroups = append(cluster.ComputeGroups, computeGroupFromStack(stack))
   return nil
 }
 
@@ -513,14 +674,18 @@ func createClusterComponentLaunchParameters(cluster *Cluster, parameterSet map[s
         val = "password-auth"
       }
     case "%COMPUTE_INSTANCE_TYPE%":
-      instanceOverride := viper.GetString("compute-instance-override")
+      instanceOverride := viper.GetString("queue-instance-override")
       if instanceOverride != "" {
         val = "other"
       } else {
-        val = viper.GetString("compute-instance-type")
+        // if we're launching via cluster launch, we use default-queue-instance-type, otherwise we use queue-instance-type
+        val = viper.GetString("queue-instance-type")
+        if val == "" {
+          val = viper.GetString("default-queue-instance-type")
+        }
       }
     case "%COMPUTE_INSTANCE_OVERRIDE%":
-      val = viper.GetString("compute-instance-override")
+      val = viper.GetString("queue-instance-override")
       if val == "" { val = "%NULL%" }
     case "%VPC%":
       val = cluster.Domain.VPC()

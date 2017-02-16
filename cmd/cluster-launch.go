@@ -56,10 +56,13 @@ var clusterLaunchCmd = &cobra.Command{
       }
     }
 
-    computeInstanceType := viper.GetString("compute-instance-type")
-    if computeInstanceType != "" {
-      if ! attendant.IsValidComputeInstanceType(computeInstanceType) {
-        return fmt.Errorf("Invalid compute instance type '%s'. Try one of: %s\n", computeInstanceType, attendant.ComputeInstanceTypes)
+    withQ, _ := cmd.Flags().GetBool("with-queue")
+    if withQ {
+      queueInstanceType := viper.GetString("queue-instance-type")
+      if queueInstanceType != "" {
+        if ! attendant.IsValidComputeInstanceType(queueInstanceType) {
+          return fmt.Errorf("Invalid compute instance type '%s'. Try one of: %s\n", queueInstanceType, attendant.ComputeInstanceTypes)
+        }
       }
     }
 
@@ -83,13 +86,17 @@ var clusterLaunchCmd = &cobra.Command{
 
       fmt.Printf("Launching cluster '%s' in domain '%s' (%s)...\n\n", args[0], domain.Name, attendant.Config().AwsRegion)
     }
-    cluster, err = launchCluster(domain, args[0])
+    cluster, err = launchCluster(domain, args[0], withQ)
     if err != nil { return err }
 
     fmt.Println("\nCluster launched.\n")
     fmt.Println("== Cluster details ==")
     fmt.Println(cluster.GetDetails() + "\n")
-    fmt.Println("\nAccess via:\n\n\tssh " + cluster.Master.Username() + "@" + cluster.Master.AccessIP())
+    ip := cluster.Master.AccessIP()
+    if ip == "" {
+      ip = cluster.Master.PrivateIP()
+    }
+    fmt.Println("\nAccess via:\n\n\tssh " + cluster.Master.Username() + "@" + ip)
     return nil
   },
 }
@@ -98,8 +105,10 @@ func init() {
   clusterCmd.AddCommand(clusterLaunchCmd)
   clusterLaunchCmd.Flags().BoolP("solo", "s", false, "Launch a Flight Compute Solo cluster")
 
-  clusterLaunchCmd.Flags().StringP("compute-instance-type", "c", attendant.ComputeInstanceTypes[0], "Compute instance type")
-  viper.BindPFlag("compute-instance-type", clusterLaunchCmd.Flags().Lookup("compute-instance-type"))
+  clusterLaunchCmd.Flags().BoolP("with-queue", "q", false, "Launch with a compute queue")
+  viper.BindPFlag("launch-with-default-queue", clusterLaunchCmd.Flags().Lookup("with-queue"))
+  clusterLaunchCmd.Flags().StringP("queue-instance-type", "t", attendant.ComputeInstanceTypes[0], "Compute queue instance type")
+  viper.BindPFlag("default-queue-instance-type", clusterLaunchCmd.Flags().Lookup("queue-instance-type"))
 
   clusterLaunchCmd.Flags().StringP("master-instance-type", "m", attendant.MasterInstanceTypes[0], "Master instance type")
   viper.BindPFlag("master-instance-type", clusterLaunchCmd.Flags().Lookup("master-instance-type"))
@@ -110,17 +119,23 @@ func init() {
   addTemplateRootFlag(clusterLaunchCmd, "clusterLaunch")
 }
 
-func launchCluster(domain *attendant.Domain, name string) (*attendant.Cluster, error) {
+func launchCluster(domain *attendant.Domain, name string, withQ bool) (*attendant.Cluster, error) {
   var count int
   if domain == nil {
     count = attendant.SoloClusterResourceCount
   } else {
     count = attendant.ClusterResourceCount
+    if withQ {
+      count += attendant.ComputeGroupResourceCount
+      if viper.GetString("compute-group-label") == "" {
+        viper.Set("compute-group-label", "default")
+      }
+    }
   }
   handler, err := attendant.CreateCreateHandler(count)
   if err != nil { return nil, err }
   cluster := attendant.NewCluster(name, domain, handler)
-  attendant.Spin(func() { err = cluster.Create() })
+  attendant.Spin(func() { err = cluster.Create(withQ) })
   cluster.MessageHandler = nil
   return cluster, err
 }

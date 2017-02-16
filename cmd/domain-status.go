@@ -35,6 +35,7 @@ import (
   "github.com/spf13/cobra"
 
   "github.com/alces-software/flight-attendant/attendant"
+  "gopkg.in/yaml.v2"
 )
 
 var forceDomainStatus bool
@@ -47,8 +48,9 @@ var domainStatusCmd = &cobra.Command{
   SilenceUsage: true,
   RunE: func(cmd *cobra.Command, args []string) error {
     all, _ := cmd.Flags().GetBool("all")
+    showVpnConfig, _ := cmd.Flags().GetBool("show-vpn-config")
 
-    if len(args) == 0 && !all {
+    if len(args) == 0 && (!all || showVpnConfig) {
       cmd.Help()
       return nil
     }
@@ -68,7 +70,11 @@ var domainStatusCmd = &cobra.Command{
       }
     } else {
       domain := attendant.NewDomain(args[0], nil)
-      statusFor(domain)
+      if showVpnConfig {
+        vpnConfigFor(domain)
+      } else {
+        statusFor(domain)
+      }
     }
     return nil
   },
@@ -76,8 +82,23 @@ var domainStatusCmd = &cobra.Command{
 
 func init() {
   domainCmd.AddCommand(domainStatusCmd)
-  domainStatusCmd.Flags().Bool("all", false, "Show all domains")
+  domainStatusCmd.Flags().BoolP("all", "a", false, "Show all domains")
+  domainStatusCmd.Flags().Bool("show-vpn-config", false, "Display VPN configuration details in a YAML format")
   domainStatusCmd.Flags().String("regions", "", "Select regions to query")
+}
+
+func vpnConfigFor(domain *attendant.Domain) {
+  var err error
+  var status *attendant.DomainStatus
+
+  attendant.SpinWithSuffix(func() { status, err = domain.Status() }, attendant.Config().AwsRegion + ": " + domain.Name)
+  if err != nil {
+    fmt.Println(err.Error())
+    return
+  }
+  if yaml, err := yaml.Marshal(&status.VPNDetails); err == nil {
+    fmt.Println(string(yaml))
+  }
 }
 
 func statusFor(domain *attendant.Domain) {
@@ -92,7 +113,35 @@ func statusFor(domain *attendant.Domain) {
 
   fmt.Printf(">>> Domain '%s' (%s) <<<\n\n", domain.Name, attendant.Config().AwsRegion)
 
-  fmt.Println("== Infrastructure ==\n")
+  fmt.Println("== Networking ==")
+  if status.HasInternetAccess {
+    fmt.Println(" * Internet access: enabled")
+  } else {
+    fmt.Println(" * Internet access: disabled")
+  }
+
+  if status.VPNConnectionId != "" {
+    fmt.Println(" * VPN connection: " + status.VPNConnectionId)
+    fmt.Println("   Outside address: " + status.VPNDetails.OutsideClientAddr)
+    fmt.Println("   Client ASN: " + status.VPNDetails.ClientASN)
+    fmt.Println("   Tun 1 Client inside address: " + status.VPNDetails.Tunnel1.InsideClientAddr)
+    fmt.Println("         AWS outside address: " + status.VPNDetails.Tunnel1.OutsideAwsAddr)
+    fmt.Println("         AWS inside address: " + status.VPNDetails.Tunnel1.InsideAwsAddr)
+    fmt.Println("         AWS ASN: " + status.VPNDetails.Tunnel1.AwsASN)
+    fmt.Println("         Shared key: " + status.VPNDetails.Tunnel1.SharedKey)
+    fmt.Println("   Tun 2 Client inside address: " + status.VPNDetails.Tunnel2.InsideClientAddr)
+    fmt.Println("         AWS outside address: " + status.VPNDetails.Tunnel2.OutsideAwsAddr)
+    fmt.Println("         AWS inside address: " + status.VPNDetails.Tunnel2.InsideAwsAddr)
+    fmt.Println("         AWS ASN: " + status.VPNDetails.Tunnel2.AwsASN)
+    fmt.Println("         Shared key: " + status.VPNDetails.Tunnel2.SharedKey)
+  }
+
+  if status.PeerVPC != "" {
+    fmt.Println(" * Peer VPC: " + status.PeerVPC)
+    fmt.Println(" * Peer network: " + status.PeerVPCCIDRBlock)
+  }
+
+  fmt.Println("\n== Infrastructure ==\n")
   if len(status.Appliances) > 0 {
     for _, appliance := range status.Appliances {
       fmt.Println("    " + appliance.Name)
@@ -108,9 +157,11 @@ func statusFor(domain *attendant.Domain) {
   fmt.Println("== Clusters ==\n")
   if len(status.Clusters) > 0 {
     for _, cluster := range status.Clusters {
+      var details string
+      attendant.SpinWithSuffix(func() { details = cluster.GetDetails() }, attendant.Config().AwsRegion + ": " + domain.Name + "/" + cluster.Name)
       fmt.Println("    " + cluster.Name)
       fmt.Println("    " + strings.Repeat("-", len(cluster.Name)))
-      for _, s := range strings.Split(cluster.GetDetails(),"\n") {
+      for _, s := range strings.Split(details,"\n") {
         fmt.Println("    " + s)
       }
     }

@@ -1,4 +1,4 @@
-// Copyright © 2016 Alces Software Ltd <support@alces-software.com>
+// Copyright © 2017 Alces Software Ltd <support@alces-software.com>
 // This file is part of Flight Attendant.
 //
 // This program is free software: you can redistribute it and/or modify
@@ -32,48 +32,46 @@ import (
   "fmt"
   
   "github.com/spf13/cobra"
-
+  
   "github.com/alces-software/flight-attendant/attendant"
 )
 
-// createCmd represents the create command
-var domainCreateCmd = &cobra.Command{
-  Use:   "create <domain>",
-  Short: "Create a Flight Compute domain",
-  Long: `Create a Flight Compute domain.`,
+// launchCmd represents the launch command
+var clusterDelqCmd = &cobra.Command{
+  Use:   "delq <cluster> <name>",
+  Short: "Remove a compute queue from a running Flight Compute cluster",
+  Long: `Remove a compute queue from a running Flight Compute cluster.`,
   SilenceUsage: true,
   RunE: func(cmd *cobra.Command, args []string) error {
-    if len(args) == 0 {
+    if len(args) <= 1 {
       cmd.Help()
       return nil
     }
 
-    if err := setupTemplateSource("domainCreate"); err != nil { return err }
+    var domain *attendant.Domain
+    var err error
 
-    domainParamsFile, err := cmd.Flags().GetString("params")
+    domain, err = findDomain("clusterDelq", false)
     if err != nil { return err }
 
-    fmt.Printf("Creating domain '%s' (%s)...\n\n", args[0], attendant.Config().AwsRegion)
-    _, err = createDomain(args[0], domainParamsFile)
+    fmt.Printf("Removing queue '%s' from cluster '%s' in domain '%s' (%s)...\n\n", args[1], args[0], domain.Name, attendant.Config().AwsRegion)
+    err = delq(domain, args[0], args[1])
     if err != nil { return err }
-
-    fmt.Println("\nDomain created.")
+    fmt.Println("\nCluster queue destroyed.\n")
     return nil
   },
 }
 
 func init() {
-  domainCmd.AddCommand(domainCreateCmd)
-  addTemplateSetFlag(domainCreateCmd, "domainCreate")
-  addTemplateRootFlag(domainCreateCmd, "domainCreate")
-  domainCreateCmd.Flags().StringP("params", "p", "", "File containing parameters to use when creating the domain")
+  clusterCmd.AddCommand(clusterDelqCmd)
+  addDomainFlag(clusterDelqCmd, "clusterDelq")
 }
 
-func createDomain(name string, domainParamsFile string) (*attendant.Domain, error) {
-  handler, err := attendant.CreateCreateHandler(attendant.DomainResourceCount)
-  if err != nil { return nil, err }
-  domain := attendant.NewDomain(name, handler)
-  attendant.Spin(func() { err = domain.Create(name, domainParamsFile) } )
-  domain.MessageHandler = nil
-  return domain, err
+func delq(domain *attendant.Domain, clusterName, queueName string) error {
+  handler, err := attendant.CreateDestroyHandler(attendant.ComputeGroupResourceCount)
+  if err != nil { return err }
+  cluster := attendant.NewCluster(clusterName, domain, handler)
+  attendant.Spin(func() { err = cluster.DestroyQueue(queueName) })
+  cluster.MessageHandler = nil
+  return err
 }

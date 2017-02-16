@@ -30,50 +30,50 @@ package cmd
 
 import (
   "fmt"
+  "strings"
   
   "github.com/spf13/cobra"
-
+  
   "github.com/alces-software/flight-attendant/attendant"
 )
 
-// createCmd represents the create command
-var domainCreateCmd = &cobra.Command{
-  Use:   "create <domain>",
-  Short: "Create a Flight Compute domain",
-  Long: `Create a Flight Compute domain.`,
+// launchCmd represents the launch command
+var clusterShowCmd = &cobra.Command{
+  Use:   "show <name>",
+  Short: "Show details of a running Flight Compute cluster",
+  Long: `Show details of a running Flight Compute cluster.`,
   SilenceUsage: true,
   RunE: func(cmd *cobra.Command, args []string) error {
-    if len(args) == 0 {
+    if len(args) < 1 {
       cmd.Help()
       return nil
     }
 
-    if err := setupTemplateSource("domainCreate"); err != nil { return err }
+    var domain *attendant.Domain
+    var err error
 
-    domainParamsFile, err := cmd.Flags().GetString("params")
+    domain, err = findDomain("clusterShow", false)
     if err != nil { return err }
 
-    fmt.Printf("Creating domain '%s' (%s)...\n\n", args[0], attendant.Config().AwsRegion)
-    _, err = createDomain(args[0], domainParamsFile)
-    if err != nil { return err }
+    cluster := attendant.NewCluster(args[0], domain, nil)
+    var exists bool
+    attendant.SpinWithSuffix(func() { exists = cluster.Exists() }, attendant.Config().AwsRegion + ": " + cluster.Domain.Name + "/" + cluster.Name)
+    if exists {
+      fmt.Println(cluster.Name)
+      fmt.Println(strings.Repeat("-", len(cluster.Name)))
 
-    fmt.Println("\nDomain created.")
-    return nil
+      var details string
+      attendant.SpinWithSuffix(func() { details = cluster.GetDetails() }, attendant.Config().AwsRegion + ": " + cluster.Domain.Name + "/" + cluster.Name)
+      fmt.Println(details)
+      return nil
+    } else {
+      return fmt.Errorf("Cluster not found: %s/%s (%s)", cluster.Domain.Name, cluster.Name, attendant.Config().AwsRegion)
+    }
   },
 }
 
 func init() {
-  domainCmd.AddCommand(domainCreateCmd)
-  addTemplateSetFlag(domainCreateCmd, "domainCreate")
-  addTemplateRootFlag(domainCreateCmd, "domainCreate")
-  domainCreateCmd.Flags().StringP("params", "p", "", "File containing parameters to use when creating the domain")
+  clusterCmd.AddCommand(clusterShowCmd)
+  addDomainFlag(clusterShowCmd, "clusterShow")
 }
 
-func createDomain(name string, domainParamsFile string) (*attendant.Domain, error) {
-  handler, err := attendant.CreateCreateHandler(attendant.DomainResourceCount)
-  if err != nil { return nil, err }
-  domain := attendant.NewDomain(name, handler)
-  attendant.Spin(func() { err = domain.Create(name, domainParamsFile) } )
-  domain.MessageHandler = nil
-  return domain, err
-}

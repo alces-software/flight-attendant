@@ -32,6 +32,7 @@ import (
   "fmt"
   "log"
   "os"
+  "strconv"
   "strings"
   "time"
 
@@ -98,6 +99,11 @@ func createHandlerFunction(resourceTotal int, inProgressText, completeText, comp
       Spinner().Suffix = ""
       Spinner().Start()
       return
+    } else if strings.HasPrefix(msg, "COUNTERS=") {
+      s := strings.Split(msg, "=")
+      c, err := strconv.Atoi(s[1])
+      if err == nil { resourceTotal = c }
+      return
     } else if msg == "DISABLE-COUNTERS" {
       disableCounters = true
       return
@@ -105,7 +111,7 @@ func createHandlerFunction(resourceTotal int, inProgressText, completeText, comp
       disableCounters = false
       return
     }
-    s := strings.Split(msg, " ")
+    s := strings.Split(strings.TrimSpace(msg), " ")
     state := s[0]
     res := s[1] + " " + s[2]
     name := s[1]
