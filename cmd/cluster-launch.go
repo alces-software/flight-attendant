@@ -127,7 +127,7 @@ func launchCluster(domain *attendant.Domain, name string, withQ bool) (*attendan
     count = attendant.ClusterResourceCount
     if withQ {
       count += attendant.ComputeGroupResourceCount
-      if ! viper.IsSet("compute-group-label") {
+      if viper.GetString("compute-group-label") == "" {
         viper.Set("compute-group-label", "default")
       }
     }
