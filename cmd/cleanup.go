@@ -55,15 +55,30 @@ var cleanupCmd = &cobra.Command{
       var stacks = []string{}
       for _, domain := range domains {
         var status *attendant.DomainStatus
+        var networkIndices = []int{}
         attendant.SpinWithSuffix(func() { status, err = domain.Status() }, region + ": " + domain.Name)
         if err != nil { return err }
         stacks = append(stacks, "flight-" + domain.Name)
         // list all topics, subscriptions, queues and remove any that aren't accounted for
         for _, cluster := range status.Clusters {
           stacks = append(stacks, "flight-" + domain.Name + "-cluster-" + cluster.Name)
+          networkIndices = append(networkIndices, cluster.Network.Index)
         }
         for _, appliance := range status.Appliances {
           stacks = append(stacks, "flight-" + domain.Name + "-" + appliance.Name)
+        }
+        entity, err := domain.LoadEntity()
+        if err != nil { return err }
+        for _, booking := range entity.NetBookings {
+          for _, a := range networkIndices {
+            if a == booking {
+              break
+            }
+            fmt.Printf("🗑  Purge stale network booking: %s/%d\n", domain.Name, booking)
+            if dryrun, _ := cmd.Flags().GetBool("dry-run"); !dryrun {
+              domain.ReleaseNetwork(booking)
+            }
+          }
         }
       }
       var soloStatus *attendant.DomainStatus
