@@ -34,6 +34,7 @@ import (
   "os"
   "strconv"
   "strings"
+  "sync"
   "time"
 
   "github.com/briandowns/spinner"
@@ -72,7 +73,8 @@ func createHandlerFunction(resourceTotal int, inProgressText, completeText, comp
   var completeRegistry = make(map[string]bool)
   var disableCounters = false
   var counterDelta = 0
-  
+  var mutex sync.RWMutex
+
   if loggingEnabled {
     f, err := os.OpenFile("fly.log", os.O_RDWR | os.O_CREATE | os.O_APPEND, 0666)
     if err != nil { return nil, err }
@@ -84,6 +86,7 @@ func createHandlerFunction(resourceTotal int, inProgressText, completeText, comp
   if err != nil { return nil, err }
 
   fn := func(msg string) {
+    mutex.Lock()
     if loggingEnabled { log.Println(msg) }
     if msg == "DONE" {
       Spinner().Stop()
@@ -148,6 +151,7 @@ func createHandlerFunction(resourceTotal int, inProgressText, completeText, comp
         Spinner().Start()
       }
     }
+    mutex.Unlock()
   }
   return fn, nil
 }
