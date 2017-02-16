@@ -91,6 +91,9 @@ func addQ(domain *attendant.Domain, clusterName, queueName, componentParamsFile 
   handler, err := attendant.CreateCreateHandler(attendant.ComputeGroupResourceCount)
   if err != nil { return err }
   cluster := attendant.NewCluster(clusterName, domain, handler)
+  if ! viper.IsSet("compute-group-label") {
+    viper.Set("compute-group-label", queueName)
+  }
   attendant.Spin(func() { err = cluster.AddQueue(queueName, componentParamsFile) })
   cluster.MessageHandler = nil
   return err
