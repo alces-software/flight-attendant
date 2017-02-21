@@ -105,6 +105,28 @@ type Cluster struct {
   MessageHandler func(msg string)
 }
 
+type ClusterDetails struct {
+  Ip string
+  KeyPair string
+  Url string
+  Username string
+  Uuid string
+  Token string
+  Queues []QueueDetails
+  Components []string
+}
+
+type QueueDetails struct {
+  Name string
+  InstanceType string
+  Pricing string
+  ResourceName string
+  MaxSize int
+  MinSize int
+  DesiredCapacity int
+  Running int
+}
+
 type ClusterNetwork struct {
   Index int
   Stack *cloudformation.Stack
@@ -485,6 +507,47 @@ func computeGroupFromStack(stack *cloudformation.Stack) *ComputeGroup {
   return &ComputeGroup{stack,queueName,instanceType,pricing,resourceName,nil}
 }
 
+func (c *Cluster) Details() *ClusterDetails {
+  var details ClusterDetails = ClusterDetails{}
+  if c.Master == nil {
+    if svc, err := CloudFormation(); err == nil {
+      if masterStack, err := getStack(svc, "flight-" + c.Domain.Name + "-" + c.Name + "-master"); err == nil {
+        c.Master = &Master{masterStack}
+      }
+    }
+  }
+  if c.Master != nil {
+    details.Ip = getStackOutput(c.Master.Stack, "AccessIP")
+    if details.Ip == "" {
+      details.Ip = getStackOutput(c.Master.Stack, "MasterPrivateIP")
+    }
+    details.KeyPair = getStackParameter(c.Master.Stack, "AccessKeyName")
+    details.Username = getStackOutput(c.Master.Stack, "Username")
+    details.Url = getStackOutput(c.Master.Stack, "WebAccess")
+    if details.Url == "" {
+      details.Url = getStackOutput(c.Master.Stack, "PrivateWebAccess")
+    }
+    c.LoadComputeGroups()
+    componentStacks, _ := getComponentStacksForCluster(c)
+    details.Uuid = getStackConfigValue(c.Master.Stack, "UUID")
+    if details.Uuid == "" { details.Uuid = "<unknown>" }
+    details.Token = getStackConfigValue(c.Master.Stack, "Token")
+    if details.Token == "" { details.Token = "<unknown>" }
+    if (len(c.ComputeGroups) > 0) {
+      details.Queues = []QueueDetails{}
+      for _, group := range c.ComputeGroups {
+        details.Queues = append(details.Queues, group.Details())
+      }
+    }
+    if (len(componentStacks) > 0) {
+      for _, stack := range componentStacks {
+        details.Components = append(details.Components, *stack.StackName)
+      }
+    }
+  }
+  return &details
+}
+
 func (c *Cluster) GetDetails() string {
   if c.Master == nil {
     if svc, err := CloudFormation(); err == nil {
@@ -539,6 +602,19 @@ func (c *Cluster) GetDetails() string {
 
 func (g *ComputeGroup) loadAutoscalingGroup() {
   g._AutoscalingGroup, _ = describeAutoscalingGroup(g.ResourceName)
+}
+
+func (g *ComputeGroup) Details() QueueDetails {
+  details := QueueDetails{}
+  details.Name = g.Name
+  details.InstanceType = g.InstanceType
+  details.Pricing = g.Pricing
+  details.ResourceName = g.ResourceName
+  details.MaxSize = g.MaxSize()
+  details.MinSize = g.MinSize()
+  details.DesiredCapacity = g.DesiredCapacity()
+  details.Running = g.Running()
+  return details
 }
 
 func (g *ComputeGroup) MaxSize() int {

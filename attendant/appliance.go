@@ -46,11 +46,20 @@ type Appliance struct {
   MessageHandler func(msg string)
 }
 
+type ApplianceDetails struct {
+  Ip string
+  KeyPair string
+  Url string
+  Extra map[string]string
+}
+
 var ApplianceTemplates = map[string]string{
   "directory": "directory.json",
   "storage-manager": "storage-manager.json",
   "access-manager": "access-manager.json",
   "monitor": "monitor.json",
+  "controller": "controller.json",
+  "silo": "silo.json",
 }
 
 var ApplianceResourceCounts = map[string]int {
@@ -58,6 +67,8 @@ var ApplianceResourceCounts = map[string]int {
   "storage-manager": 9,
   "access-manager": 9,
   "monitor": 11,
+  "controller": 15,
+  "silo": 8,
 }
 
 var ApplianceInstanceTypes = []string{
@@ -80,6 +91,18 @@ func IsValidApplianceType(applianceType string) bool {
   return exists
 }
 
+func (a *Appliance) LoadStack() error {
+  if a.Stack != nil {
+    return nil
+  }
+  svc, err := CloudFormation()
+  if err != nil { return err }
+  stack, err := getStack(svc, "flight-" + a.Domain.Name + "-" + a.Name)
+  if err != nil { return err }
+  a.Stack = stack
+  return nil
+}
+
 func (a *Appliance) Create() error {
   svc, err := CloudFormation()
   if err != nil { return err }
@@ -95,6 +118,15 @@ func (a *Appliance) Create() error {
   switch a.Name {
   case "directory", "monitor":
     launchParams = createApplianceLaunchParameters(a, loadParameterSet(a.Name, DomainApplianceParameters))
+  case "controller":
+    defaultParams := make(map[string]string)
+    for k,v := range DomainApplianceParameters {
+      defaultParams[k] = v
+    }
+    defaultParams["PrvSubnet"] = "%PRV_SUBNET%"
+    launchParams = createApplianceLaunchParameters(a, loadParameterSet(a.Name, defaultParams))
+  case "silo":
+    launchParams = createApplianceLaunchParameters(a, loadParameterSet(a.Name, SiloParameters))
   case "access-manager", "storage-manager":
     launchParams = createApplianceLaunchParameters(a, loadParameterSet(a.Name, BasicApplianceParameters))
   default:
@@ -162,6 +194,66 @@ func (a Appliance) Destroy() error {
   return err
 }
 
+func (a Appliance) Details() *ApplianceDetails {
+  var details ApplianceDetails = ApplianceDetails{}
+  details.Extra = make(map[string]string)
+  switch a.Name {
+  case "directory":
+    details.Ip = getStackOutput(a.Stack, "DirectoryAccessIP")
+    details.KeyPair = getStackParameter(a.Stack, "AccessKeyName")
+    details.Url = getStackOutput(a.Stack, "DirectoryWebAccess")
+    configData := strings.Split(getStackOutput(a.Stack, "ConfigurationResult"), "\"")
+    var otherData []string
+    if len(configData) > 3 {
+      otherData = strings.Split(configData[3],";")
+    }
+    for _, otherDatum := range otherData {
+      keyVal := strings.Split(strings.TrimSpace(otherDatum), ":")
+      if len(keyVal) > 1 {
+        details.Extra[keyVal[0]] = details.Extra[keyVal[1]]
+      }
+    }
+  case "controller":
+    details.Ip = getStackOutput(a.Stack, "ControllerAccessIP")
+    details.KeyPair = getStackParameter(a.Stack, "AccessKeyName")
+    details.Url = getStackOutput(a.Stack, "ControllerWebAccess")
+    configData := strings.Split(getStackOutput(a.Stack, "ConfigurationResult"), "\"")
+    var otherData []string
+    if len(configData) > 3 {
+      otherData = strings.Split(configData[3],";")
+    }
+    for _, otherDatum := range otherData {
+      keyVal := strings.Split(strings.TrimSpace(otherDatum), ":")
+      if len(keyVal) > 1 {
+        details.Extra[keyVal[0]] = details.Extra[keyVal[1]]
+      }
+    }
+    details.Extra["PrivateIpAddress"] = getStackOutput(a.Stack, "ControllerPrivateIP")
+  case "monitor":
+    details.Ip = getStackOutput(a.Stack, "MonitorAccessIP")
+    details.KeyPair = getStackParameter(a.Stack, "AccessKeyName")
+    details.Url = getStackOutput(a.Stack, "MonitorWebAccess")
+    configData := strings.Split(getStackOutput(a.Stack, "ConfigurationResult"), "\"")
+    var otherData []string
+    if len(configData) > 3 {
+      otherData = strings.Split(configData[3],";")
+    }
+    for _, otherDatum := range otherData {
+      keyVal := strings.Split(strings.TrimSpace(otherDatum), ":")
+      if len(keyVal) > 1 {
+        details.Extra[keyVal[0]] = strings.TrimSpace(keyVal[1])
+      }
+    }
+  case "storage-manager":
+    details.Url = getStackOutput(a.Stack, "StorageManagerWebAccess")
+  case "access-manager":
+    details.Url = getStackOutput(a.Stack, "AccessManagerWebAccess")
+  case "silo":
+    details.KeyPair = getStackParameter(a.Stack, "AccessKeyName")
+  }
+  return &details
+}
+
 func (a Appliance) GetDetails() string {
   var details string
   switch a.Name {
@@ -169,6 +261,20 @@ func (a Appliance) GetDetails() string {
     ip := getStackOutput(a.Stack, "DirectoryAccessIP")
     keypair := getStackParameter(a.Stack, "AccessKeyName")
     url := getStackOutput(a.Stack, "DirectoryWebAccess")
+    configData := strings.Split(getStackOutput(a.Stack, "ConfigurationResult"), "\"")
+    var otherData []string
+    if len(configData) > 3 {
+      otherData = strings.Split(configData[3],";")
+    }
+    otherDetails := ""
+    for _, otherDatum := range otherData {
+      otherDetails += strings.TrimSpace(otherDatum) + "\n"
+    }
+    details = fmt.Sprintf("IP address: %s\nKey pair: %s\nAccess URL: %s\n%s", ip, keypair, url, otherDetails)
+  case "controller":
+    ip := getStackOutput(a.Stack, "ControllerAccessIP")
+    keypair := getStackParameter(a.Stack, "AccessKeyName")
+    url := getStackOutput(a.Stack, "ControllerWebAccess")
     configData := strings.Split(getStackOutput(a.Stack, "ConfigurationResult"), "\"")
     var otherData []string
     if len(configData) > 3 {
@@ -199,6 +305,9 @@ func (a Appliance) GetDetails() string {
   case "access-manager":
     url := getStackOutput(a.Stack, "AccessManagerWebAccess")
     details = fmt.Sprintf("Access URL: %s\n", url)
+  case "silo":
+    keypair := getStackParameter(a.Stack, "AccessKeyName")
+    details = fmt.Sprintf("Key pair: %s\n", keypair)
   }
   return details
 }
@@ -230,6 +339,8 @@ func createApplianceLaunchParameters(appliance *Appliance, parameterSet map[stri
       val = viper.GetString(appliance.Name + "-instance-type")
       if val == "" { val = viper.GetString("appliance-instance-type") }
       if val == "" { val = ApplianceInstanceTypes[0] }
+    case "%MASTER_IP%":
+      val = appliance.Domain.MasterIP()
     default:
       if strings.HasPrefix(value, "%") && strings.HasSuffix(value, "%") {
         configKey := strings.ToLower(strings.Replace(value[1:len(value)-1], "_", "-", -1))

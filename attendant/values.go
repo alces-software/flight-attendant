@@ -245,6 +245,29 @@ var DomainApplianceParameters = map[string]string {
   "AllowInternetAccess": "%ALLOW_INTERNET_ACCESS%",
 }
 
+var SiloParameters = map[string]string {
+  "AccessKeyName": "%ACCESS_KEY_NAME%",
+
+  "FlightProfileBucket": "%PROFILE_BUCKET%",
+  "FlightProfiles": "%APPLIANCE_PROFILES%",
+  "FlightFeatures": "",
+
+  "OSSInstanceType": "%OSS_INSTANCE_TYPE%",
+  "OSSGroupSize": "%OSS_GROUP_SIZE%",
+  "MDSInstanceType": "%MDS_INSTANCE_TYPE%",
+
+  "Domain": "%DOMAIN%",
+  "FlightVPC": "%VPC%",
+  "PrvSubnet": "%PRV_SUBNET%",
+  "MgtSubnet": "%MGT_SUBNET%",
+  "PlacementGroup": "%PLACEMENT_GROUP%",
+  "MasterPrivateIP": "%MASTER_IP%",
+
+  // XXX
+  "ClusterSecurityToken": "39f05372-f870-11e6-9f50-7831c1c0e63c",
+  "ClusterUUID": "39f05372-f870-11e6-9f50-7831c1c0e63c",
+}
+
 var BasicApplianceParameters = map[string]string {
   "AccessKeyName": "%ACCESS_KEY_NAME%",
   "AccessUsername": "%ADMIN_USER_NAME%",

@@ -31,7 +31,7 @@ package cmd
 import (
   "fmt"
   "strings"
-  
+
   "github.com/spf13/cobra"
   "github.com/aws/aws-sdk-go/service/cloudformation"
   
@@ -68,9 +68,17 @@ var clusterListCmd = &cobra.Command{
         for _, domain := range domains {
           attendant.SpinWithSuffix(func() { status, err = domain.Status() }, region + ": " + domain.Name)
           if err != nil { return err }
-          fmt.Printf("== Clusters in '%s' (%s) ==\n", domain.Name, attendant.Config().AwsRegion)
-          printClusters(status)
-          fmt.Println("")
+          if attendant.Config().SimpleOutput {
+            for _, cluster := range status.Clusters {
+              err = cluster.LoadComputeGroups()
+              if err != nil { return err }
+              fmt.Printf("%s=%d\n", cluster.Name, len(cluster.ComputeGroups))
+            }
+          } else {
+            fmt.Printf("== Clusters in '%s' (%s) ==\n", domain.Name, attendant.Config().AwsRegion)
+            printClusters(status)
+            fmt.Println("")
+          }
         }
       }
       if solo || all {

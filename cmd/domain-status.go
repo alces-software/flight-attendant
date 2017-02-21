@@ -73,7 +73,11 @@ var domainStatusCmd = &cobra.Command{
       if showVpnConfig {
         vpnConfigFor(domain)
       } else {
-        statusFor(domain)
+        if attendant.Config().SimpleOutput {
+          simpleStatusFor(domain)
+        } else {
+          statusFor(domain)
+        }
       }
     }
     return nil
@@ -97,6 +101,17 @@ func vpnConfigFor(domain *attendant.Domain) {
     return
   }
   if yaml, err := yaml.Marshal(&status.VPNDetails); err == nil {
+    fmt.Println(string(yaml))
+  }
+}
+
+func simpleStatusFor(domain *attendant.Domain) {
+  status, err := domain.Status()
+  if err != nil {
+    fmt.Println(err.Error())
+    return
+  }
+  if yaml, err := yaml.Marshal(status.Details()); err == nil {
     fmt.Println(string(yaml))
   }
 }
