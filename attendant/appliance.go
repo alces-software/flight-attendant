@@ -67,8 +67,8 @@ var ApplianceResourceCounts = map[string]int {
   "storage-manager": 9,
   "access-manager": 9,
   "monitor": 11,
-  "controller": 15,
-  "silo": 8,
+  "controller": 16,
+  "silo": 10,
 }
 
 var ApplianceInstanceTypes = []string{

@@ -370,7 +370,11 @@ func (d *Domain) MasterIP() string {
   // get controller stack
   a := NewAppliance("controller", d, nil)
   a.LoadStack()
-  return a.Details().Extra["PrivateIpAddress"]
+  if a.Stack == nil {
+    return ""
+  } else {
+    return a.Details().Extra["PrivateIpAddress"]
+  }
 }
 
 func NewDomain(name string, handler func(msg string)) *Domain {
