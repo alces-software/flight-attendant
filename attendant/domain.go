@@ -65,6 +65,16 @@ type DomainStatus struct {
   VPNDetails VPNConnectionDetails
 }
 
+type DomainDetails struct {
+  Clusters map[string]*ClusterDetails
+  Appliances map[string]*ApplianceDetails
+  HasInternetAccess bool
+  VPNConnectionId string
+  PeerVPC string
+  PeerVPCCIDRBlock string
+  VPNDetails VPNConnectionDetails
+}
+
 type XMLVPNConnection struct {
   Tunnels []struct {
     OutsideClientAddr string `xml:"customer_gateway>tunnel_outside_address>ip_address"`
@@ -158,6 +168,24 @@ func SoloStatus() (*DomainStatus, error) {
     }
   })
   return &soloStatus, err
+}
+
+func (s *DomainStatus) Details() *DomainDetails {
+  details := DomainDetails{}
+  details.HasInternetAccess = s.HasInternetAccess
+  details.VPNConnectionId = s.VPNConnectionId
+  details.PeerVPC = s.PeerVPC
+  details.PeerVPCCIDRBlock = s.PeerVPCCIDRBlock
+  details.VPNDetails = s.VPNDetails
+  details.Clusters = make(map[string]*ClusterDetails)
+  details.Appliances = make(map[string]*ApplianceDetails)
+  for _, cluster := range s.Clusters {
+    details.Clusters[cluster.Name] = cluster.Details()
+  }
+  for _, appliance := range s.Appliances {
+    details.Appliances[appliance.Name] = appliance.Details()
+  }
+  return &details
 }
 
 func (d *Domain) Status() (*DomainStatus, error) {
@@ -336,6 +364,17 @@ func (d *Domain) Create(prefix string, domainParamsFile string) error {
 
 func (d *Domain) HasInternetAccess() bool {
   return getStackParameter(d.Stack, "AllowInternetAccess") != "0"
+}
+
+func (d *Domain) MasterIP() string {
+  // get controller stack
+  a := NewAppliance("controller", d, nil)
+  a.LoadStack()
+  if a.Stack == nil {
+    return ""
+  } else {
+    return a.Details().Extra["PrivateIpAddress"]
+  }
 }
 
 func NewDomain(name string, handler func(msg string)) *Domain {
