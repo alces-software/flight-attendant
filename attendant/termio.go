@@ -87,6 +87,7 @@ func createHandlerFunction(resourceTotal int, inProgressText, completeText, comp
 
   fn := func(msg string) {
     mutex.Lock()
+    defer mutex.Unlock()
     if loggingEnabled { log.Println(msg) }
     if msg == "DONE" {
       Spinner().Stop()
@@ -151,7 +152,6 @@ func createHandlerFunction(resourceTotal int, inProgressText, completeText, comp
         Spinner().Start()
       }
     }
-    mutex.Unlock()
   }
   return fn, nil
 }
