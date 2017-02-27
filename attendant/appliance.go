@@ -53,12 +53,18 @@ type ApplianceDetails struct {
   Extra map[string]string
 }
 
+var BaseApplianceNames = []string{
+  "controller",
+  "directory",
+  "monitor",
+}
+
 var ApplianceTemplates = map[string]string{
+  "controller": "controller.json",
   "directory": "directory.json",
+  "monitor": "monitor.json",
   "storage-manager": "storage-manager.json",
   "access-manager": "access-manager.json",
-  "monitor": "monitor.json",
-  "controller": "controller.json",
   "silo": "silo.json",
 }
 

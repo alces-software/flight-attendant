@@ -47,7 +47,8 @@ var infraLaunchCmd = &cobra.Command{
     var err error
 
     all, _ := cmd.Flags().GetBool("all")
-    if !all {
+    base, _ := cmd.Flags().GetBool("base")
+    if !all && !base {
       if len(args) == 0 {
         cmd.Help()
         return nil
@@ -62,7 +63,17 @@ var infraLaunchCmd = &cobra.Command{
     domain, err := findDomain("infraLaunch", true)
     if err != nil { return err }
 
-    if all {
+    if base {
+      for _, applianceName := range attendant.BaseApplianceNames {
+        var appliance *attendant.Appliance
+        fmt.Printf("Launching appliance '%s' in domain '%s' (%s)...\n\n", applianceName, domain.Name, attendant.Config().AwsRegion)
+        appliance, err = launchAppliance(domain, applianceName)
+        if err != nil { break }
+        fmt.Println("\nAppliance launched.\n")
+        fmt.Println("== Appliance details ==")
+        fmt.Println(appliance.GetDetails() + "\n")
+      }
+    } else if all {
       for applianceName, _ := range attendant.ApplianceTemplates {
         var appliance *attendant.Appliance
         fmt.Printf("Launching appliance '%s' in domain '%s' (%s)...\n\n", applianceName, domain.Name, attendant.Config().AwsRegion)
@@ -97,7 +108,8 @@ func init() {
   infraLaunchCmd.Flags().StringP("instance-type", "i", "", fmt.Sprintf("Appliance instance type (default: %s)", attendant.ApplianceInstanceTypes[0]))
   viper.BindPFlag("appliance-instance-type", infraLaunchCmd.Flags().Lookup("instance-type"))
 
-  infraLaunchCmd.Flags().BoolP("all", "a", false, "Launch all infrastructure appliances into a domain")
+  infraLaunchCmd.Flags().BoolP("base", "b", false, "Launch all base appliances into a domain")
+  infraLaunchCmd.Flags().BoolP("all", "a", false, "Launch all base and optional appliances into a domain")
 }
 
 func launchAppliance(domain *attendant.Domain, name string) (*attendant.Appliance, error) {
