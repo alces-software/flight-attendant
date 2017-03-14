@@ -49,9 +49,13 @@ func Spinner() *spinner.Spinner {
 }
 
 func Spin(fn func()) {
-  attSpinner.Start()
-  fn()
-  attSpinner.Stop()
+  if Config().SimpleOutput {
+    fn()
+  } else {
+    attSpinner.Start()
+    fn()
+    attSpinner.Stop()
+  }
 }
 
 func SpinWithSuffix(fn func(), suffix string) {
@@ -81,7 +85,11 @@ func createHandlerFunction(resourceTotal int, inProgressText, completeText, comp
     defer f.Close()
     log.SetOutput(f)
   }
-  
+
+  if Config().SimpleOutput {
+    return func(msg string) { fmt.Println(msg) }, nil
+  }
+
   c, err := curse.New()
   if err != nil { return nil, err }
 
