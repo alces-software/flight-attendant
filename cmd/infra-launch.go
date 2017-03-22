@@ -39,7 +39,7 @@ import (
 
 // launchCmd represents the launch command
 var infraLaunchCmd = &cobra.Command{
-  Use:   "launch [<appliance>|--all]",
+  Use:   "launch [<appliance>|--all|--base]",
   Short: "Launch a Flight infrastructure appliance",
   Long: `Launch a Flight infrastructure appliance.`,
   SilenceUsage: true,
