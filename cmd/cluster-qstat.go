@@ -52,6 +52,7 @@ var clusterQstatCmd = &cobra.Command{
     var domain *attendant.Domain
     var err error
 
+    if err := attendant.PreflightCheck(); err != nil { return err }
     domain, err = findDomain("clusterQstat", false)
     if err != nil { return err }
 

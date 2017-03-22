@@ -643,3 +643,21 @@ func getAutoscalingResource(stack *cloudformation.Stack) (*cloudformation.StackR
   }
   return nil, fmt.Errorf("Autoscaling resource not found for stack: %s", *stack.StackName)
 }
+
+func PreflightCheck() error {
+  svc, err := CloudFormation()
+  if err != nil { return err }
+  _, err = svc.DescribeAccountLimits(&cloudformation.DescribeAccountLimitsInput{})
+  if err != nil {
+    if aerr, ok := err.(awserr.Error); ok {
+      switch aerr.Code() {
+      case "InvalidClientTokenId":
+        // this happens when credentials are incorrect
+        return fmt.Errorf("Unable to connect to AWS: invalid credentials")
+      default:
+        return fmt.Errorf("Unable to connect to AWS: connection to endpoint failed")
+      }
+    }
+  }
+  return nil
+}
