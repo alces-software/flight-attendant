@@ -30,6 +30,7 @@ package attendant
 
 import (
   "fmt"
+  "regexp"
   "strings"
   "encoding/json"
   "github.com/aws/aws-sdk-go/aws"
@@ -645,6 +646,11 @@ func getAutoscalingResource(stack *cloudformation.Stack) (*cloudformation.StackR
 }
 
 func PreflightCheck() error {
+  matched, err := regexp.Match("^[a-z]{2}-[a-z]+-[1-9]$",[]byte(Config().AwsRegion))
+  if err != nil { return err }
+  if !matched {
+    return fmt.Errorf("Bad region: %s", Config().AwsRegion)
+  }
   svc, err := CloudFormation()
   if err != nil { return err }
   _, err = svc.DescribeAccountLimits(&cloudformation.DescribeAccountLimitsInput{})
