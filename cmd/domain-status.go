@@ -55,6 +55,7 @@ var domainStatusCmd = &cobra.Command{
       return nil
     }
 
+    if err := attendant.PreflightCheck(); err != nil { return err }
     if all {
       regions := getRegions(cmd)
       for _, region := range regions {

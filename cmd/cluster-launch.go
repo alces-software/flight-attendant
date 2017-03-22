@@ -66,6 +66,7 @@ var clusterLaunchCmd = &cobra.Command{
       }
     }
 
+    if err := attendant.PreflightCheck(); err != nil { return err }
     if err := setupTemplateSource("clusterLaunch"); err != nil { return err }
     if err := setupKeyPair("clusterLaunch"); err != nil { return err }
 

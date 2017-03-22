@@ -46,6 +46,7 @@ var domainListCmd = &cobra.Command{
     var domains []attendant.Domain
     var err error
 
+    if err := attendant.PreflightCheck(); err != nil { return err }
     regions := getRegions(cmd)
     for _, region := range regions {
       attendant.Config().AwsRegion = region

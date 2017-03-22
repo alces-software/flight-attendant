@@ -51,6 +51,7 @@ var domainPurgeCmd = &cobra.Command{
       return nil
     }
 
+    if err := attendant.PreflightCheck(); err != nil { return err }
     domain := attendant.NewDomain(args[0], nil)
 
     if confirmed, _ := cmd.Flags().GetBool("yes"); !confirmed {

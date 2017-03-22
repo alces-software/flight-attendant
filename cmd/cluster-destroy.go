@@ -50,6 +50,7 @@ var clusterDestroyCmd = &cobra.Command{
 
     var domain *attendant.Domain
     var err error
+    if err := attendant.PreflightCheck(); err != nil { return err }
     solo, _ := cmd.Flags().GetBool("solo")
     if solo {
       fmt.Printf("Destroying Flight Compute Solo cluster '%s' in (%s)...\n\n", args[0], attendant.Config().AwsRegion)

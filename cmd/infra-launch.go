@@ -57,6 +57,7 @@ var infraLaunchCmd = &cobra.Command{
       }
     }
 
+    if err := attendant.PreflightCheck(); err != nil { return err }
     if err := setupTemplateSource("infraLaunch"); err != nil { return err }
     if err := setupKeyPair("infraLaunch"); err != nil { return err }
 

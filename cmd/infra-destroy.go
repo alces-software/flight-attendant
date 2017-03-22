@@ -53,6 +53,7 @@ var infraDestroyCmd = &cobra.Command{
       }
     }
 
+    if err := attendant.PreflightCheck(); err != nil { return err }
     domain, err := findDomain("infraDestroy", false)
     if err != nil { return err }
 
