@@ -44,7 +44,7 @@ var forceDomainStatus bool
 var domainStatusCmd = &cobra.Command{
   Use:   "status <domain>",
   Short: "Show status of a Flight Compute domain",
-  Long: `Show status a Flight Compute domain.`,
+  Long: `Show status of a Flight Compute domain.`,
   SilenceUsage: true,
   RunE: func(cmd *cobra.Command, args []string) error {
     all, _ := cmd.Flags().GetBool("all")
