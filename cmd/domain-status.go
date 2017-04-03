@@ -44,7 +44,7 @@ var forceDomainStatus bool
 var domainStatusCmd = &cobra.Command{
   Use:   "status <domain>",
   Short: "Show status of a Flight Compute domain",
-  Long: `Show status a Flight Compute domain.`,
+  Long: `Show status of a Flight Compute domain.`,
   SilenceUsage: true,
   RunE: func(cmd *cobra.Command, args []string) error {
     all, _ := cmd.Flags().GetBool("all")
@@ -55,6 +55,7 @@ var domainStatusCmd = &cobra.Command{
       return nil
     }
 
+    if err := attendant.PreflightCheck(); err != nil { return err }
     if all {
       regions := getRegions(cmd)
       for _, region := range regions {
@@ -73,7 +74,11 @@ var domainStatusCmd = &cobra.Command{
       if showVpnConfig {
         vpnConfigFor(domain)
       } else {
-        statusFor(domain)
+        if attendant.Config().SimpleOutput {
+          simpleStatusFor(domain)
+        } else {
+          statusFor(domain)
+        }
       }
     }
     return nil
@@ -97,6 +102,17 @@ func vpnConfigFor(domain *attendant.Domain) {
     return
   }
   if yaml, err := yaml.Marshal(&status.VPNDetails); err == nil {
+    fmt.Println(string(yaml))
+  }
+}
+
+func simpleStatusFor(domain *attendant.Domain) {
+  status, err := domain.Status()
+  if err != nil {
+    fmt.Println(err.Error())
+    return
+  }
+  if yaml, err := yaml.Marshal(status.Details()); err == nil {
     fmt.Println(string(yaml))
   }
 }

@@ -53,6 +53,8 @@ var domainCreateCmd = &cobra.Command{
     domainParamsFile, err := cmd.Flags().GetString("params")
     if err != nil { return err }
 
+    if err := attendant.PreflightCheck(); err != nil { return err }
+
     fmt.Printf("Creating domain '%s' (%s)...\n\n", args[0], attendant.Config().AwsRegion)
     _, err = createDomain(args[0], domainParamsFile)
     if err != nil { return err }

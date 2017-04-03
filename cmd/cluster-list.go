@@ -31,7 +31,7 @@ package cmd
 import (
   "fmt"
   "strings"
-  
+
   "github.com/spf13/cobra"
   "github.com/aws/aws-sdk-go/service/cloudformation"
   
@@ -48,6 +48,8 @@ var clusterListCmd = &cobra.Command{
     var status *attendant.DomainStatus
     var domains []attendant.Domain
     var err error
+
+    if err := attendant.PreflightCheck(); err != nil { return err }
 
     regions := getRegions(cmd)
     for _, region := range regions {
@@ -68,9 +70,17 @@ var clusterListCmd = &cobra.Command{
         for _, domain := range domains {
           attendant.SpinWithSuffix(func() { status, err = domain.Status() }, region + ": " + domain.Name)
           if err != nil { return err }
-          fmt.Printf("== Clusters in '%s' (%s) ==\n", domain.Name, attendant.Config().AwsRegion)
-          printClusters(status)
-          fmt.Println("")
+          if attendant.Config().SimpleOutput {
+            for _, cluster := range status.Clusters {
+              err = cluster.LoadComputeGroups()
+              if err != nil { return err }
+              fmt.Printf("%s=%d\n", cluster.Name, len(cluster.ComputeGroups))
+            }
+          } else {
+            fmt.Printf("== Clusters in '%s' (%s) ==\n", domain.Name, attendant.Config().AwsRegion)
+            printClusters(status)
+            fmt.Println("")
+          }
         }
       }
       if solo || all {
@@ -125,7 +135,11 @@ func printClusters(status *attendant.DomainStatus) {
   if len(status.Clusters) > 0 {
     for _, cluster := range status.Clusters {
       var details string
-      attendant.SpinWithSuffix(func() { details = cluster.GetDetails() }, attendant.Config().AwsRegion + ": " + cluster.Domain.Name + "/" + cluster.Name)
+      clusterName := cluster.Name
+      if cluster.Domain != nil {
+        clusterName = cluster.Domain.Name + "/" + clusterName
+      }
+      attendant.SpinWithSuffix(func() { details = cluster.GetDetails() }, attendant.Config().AwsRegion + ": " + clusterName)
       fmt.Println("    " + cluster.Name)
       fmt.Println("    " + strings.Repeat("-", len(cluster.Name)))
       for _, s := range strings.Split(details,"\n") {

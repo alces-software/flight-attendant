@@ -30,6 +30,7 @@ package attendant
 
 import (
   "fmt"
+  "regexp"
   "strings"
   "encoding/json"
   "github.com/aws/aws-sdk-go/aws"
@@ -440,7 +441,9 @@ func eachRunningStack(fn func(stack *cloudformation.Stack)) error {
           return err
         }
       }
-      fn(stacksResp.Stacks[0])
+      if len(stacksResp.Stacks) > 0 {
+        fn(stacksResp.Stacks[0])
+      }
     }
   }
 
@@ -640,4 +643,27 @@ func getAutoscalingResource(stack *cloudformation.Stack) (*cloudformation.StackR
     }
   }
   return nil, fmt.Errorf("Autoscaling resource not found for stack: %s", *stack.StackName)
+}
+
+func PreflightCheck() error {
+  matched, err := regexp.Match("^[a-z]{2}-[a-z]+-[1-9]$",[]byte(Config().AwsRegion))
+  if err != nil { return err }
+  if !matched {
+    return fmt.Errorf("Bad region: %s", Config().AwsRegion)
+  }
+  svc, err := CloudFormation()
+  if err != nil { return err }
+  _, err = svc.DescribeAccountLimits(&cloudformation.DescribeAccountLimitsInput{})
+  if err != nil {
+    if aerr, ok := err.(awserr.Error); ok {
+      switch aerr.Code() {
+      case "InvalidClientTokenId":
+        // this happens when credentials are incorrect
+        return fmt.Errorf("Unable to connect to AWS: invalid credentials")
+      default:
+        return fmt.Errorf("Unable to connect to AWS: connection to endpoint failed (%s)", err.Error())
+      }
+    }
+  }
+  return nil
 }

@@ -105,6 +105,28 @@ type Cluster struct {
   MessageHandler func(msg string)
 }
 
+type ClusterDetails struct {
+  Ip string
+  KeyPair string
+  Url string
+  Username string
+  Uuid string
+  Token string
+  Queues []QueueDetails
+  Components []string
+}
+
+type QueueDetails struct {
+  Name string
+  InstanceType string
+  Pricing string
+  ResourceName string
+  MaxSize int
+  MinSize int
+  DesiredCapacity int
+  Running int
+}
+
 type ClusterNetwork struct {
   Index int
   Stack *cloudformation.Stack
@@ -314,6 +336,69 @@ func (c *Cluster) Reduce(componentType, componentName string) error {
   return nil
 }
 
+func (c *Cluster) Purge() error {
+  svc, err := CloudFormation()
+
+  if err != nil { return err }
+  var ch chan string = make(chan string)
+  // purge components
+  componentStacks, err := getComponentStacksForCluster(c)
+  if err != nil { return err }
+  for _, stack := range componentStacks {
+    go func(stack *cloudformation.Stack, ch chan<- string) {
+      n := fmt.Sprintf("%s %s", *stack.StackName, *stack.StackName)
+      c.MessageHandler("DELETE_IN_PROGRESS " + n)
+      destroyStack(svc, *stack.StackName)
+      ch <- *stack.StackName
+    }(stack, ch)
+  }
+
+  // purge compute groups
+  c.LoadComputeGroups()
+  for _, group := range c.ComputeGroups {
+    go func(stack *cloudformation.Stack, ch chan<- string) {
+      n := fmt.Sprintf("%s %s", *stack.StackName, *stack.StackName)
+      c.MessageHandler("DELETE_IN_PROGRESS " + n)
+      destroyStack(svc, *stack.StackName)
+      ch <- *stack.StackName
+    }(group.Stack, ch)
+  }
+
+  // purge master
+  go func(ch chan<- string) {
+    n := fmt.Sprintf("%s %s", *c.Master.Stack.StackName, *c.Master.Stack.StackName)
+    c.MessageHandler("DELETE_IN_PROGRESS " + n)
+    destroyMaster(c, svc)
+    ch <- *c.Master.Stack.StackName
+  }(ch)
+
+  count := len(componentStacks) + len(c.ComputeGroups) + 1
+  for item := <- ch; item != ""; item = <- ch {
+    c.MessageHandler("DELETE_COMPLETE " + item + " " + item)
+    count -= 1
+    if count == 0 {
+      break
+    }
+  }
+
+  // have to wait until everything else is destroyed before destroing the network
+  n := fmt.Sprintf("%s %s", *c.Network.Stack.StackName, *c.Network.Stack.StackName)
+  c.MessageHandler("DELETE_IN_PROGRESS " + n)
+  destroyClusterNetwork(c, svc)
+  c.MessageHandler("DELETE_COMPLETE " + n)
+
+  err = cleanupEventHandling("flight-" + c.Domain.Name + "-cluster-" + c.Name)
+  if err != nil { return err }
+
+  entity, err := c.LoadEntity()
+  if err != nil { return err }
+  err = c.Domain.ReleaseNetwork(entity.NetworkIndex)
+  if err != nil { return err }
+  c.DestroyEntity()
+
+  return nil
+}
+
 func (c *Cluster) Destroy() error {
   svc, err := CloudFormation()
   if err != nil { return err }
@@ -385,6 +470,9 @@ func (c *Cluster) Exists() bool {
 }
 
 func (c *Cluster) LoadComputeGroups() error {
+  if len(c.ComputeGroups) > 0 {
+    return nil
+  }
   stacks, err := getComputeGroupStacksForCluster(c)
   if err != nil { return err }
   for _, stack := range stacks {
@@ -417,6 +505,47 @@ func computeGroupFromStack(stack *cloudformation.Stack) *ComputeGroup {
     resourceName = *autoscalingResource.PhysicalResourceId
   }
   return &ComputeGroup{stack,queueName,instanceType,pricing,resourceName,nil}
+}
+
+func (c *Cluster) Details() *ClusterDetails {
+  var details ClusterDetails = ClusterDetails{}
+  if c.Master == nil {
+    if svc, err := CloudFormation(); err == nil {
+      if masterStack, err := getStack(svc, "flight-" + c.Domain.Name + "-" + c.Name + "-master"); err == nil {
+        c.Master = &Master{masterStack}
+      }
+    }
+  }
+  if c.Master != nil {
+    details.Ip = getStackOutput(c.Master.Stack, "AccessIP")
+    if details.Ip == "" {
+      details.Ip = getStackOutput(c.Master.Stack, "MasterPrivateIP")
+    }
+    details.KeyPair = getStackParameter(c.Master.Stack, "AccessKeyName")
+    details.Username = getStackOutput(c.Master.Stack, "Username")
+    details.Url = getStackOutput(c.Master.Stack, "WebAccess")
+    if details.Url == "" {
+      details.Url = getStackOutput(c.Master.Stack, "PrivateWebAccess")
+    }
+    c.LoadComputeGroups()
+    componentStacks, _ := getComponentStacksForCluster(c)
+    details.Uuid = getStackConfigValue(c.Master.Stack, "UUID")
+    if details.Uuid == "" { details.Uuid = "<unknown>" }
+    details.Token = getStackConfigValue(c.Master.Stack, "Token")
+    if details.Token == "" { details.Token = "<unknown>" }
+    if (len(c.ComputeGroups) > 0) {
+      details.Queues = []QueueDetails{}
+      for _, group := range c.ComputeGroups {
+        details.Queues = append(details.Queues, group.Details())
+      }
+    }
+    if (len(componentStacks) > 0) {
+      for _, stack := range componentStacks {
+        details.Components = append(details.Components, *stack.StackName)
+      }
+    }
+  }
+  return &details
 }
 
 func (c *Cluster) GetDetails() string {
@@ -473,6 +602,19 @@ func (c *Cluster) GetDetails() string {
 
 func (g *ComputeGroup) loadAutoscalingGroup() {
   g._AutoscalingGroup, _ = describeAutoscalingGroup(g.ResourceName)
+}
+
+func (g *ComputeGroup) Details() QueueDetails {
+  details := QueueDetails{}
+  details.Name = g.Name
+  details.InstanceType = g.InstanceType
+  details.Pricing = g.Pricing
+  details.ResourceName = g.ResourceName
+  details.MaxSize = g.MaxSize()
+  details.MinSize = g.MinSize()
+  details.DesiredCapacity = g.DesiredCapacity()
+  details.Running = g.Running()
+  return details
 }
 
 func (g *ComputeGroup) MaxSize() int {

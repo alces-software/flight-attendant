@@ -34,6 +34,7 @@ import (
   "os"
   "strconv"
   "strings"
+  "sync"
   "time"
 
   "github.com/briandowns/spinner"
@@ -48,9 +49,13 @@ func Spinner() *spinner.Spinner {
 }
 
 func Spin(fn func()) {
-  attSpinner.Start()
-  fn()
-  attSpinner.Stop()
+  if Config().SimpleOutput {
+    fn()
+  } else {
+    attSpinner.Start()
+    fn()
+    attSpinner.Stop()
+  }
 }
 
 func SpinWithSuffix(fn func(), suffix string) {
@@ -72,18 +77,25 @@ func createHandlerFunction(resourceTotal int, inProgressText, completeText, comp
   var completeRegistry = make(map[string]bool)
   var disableCounters = false
   var counterDelta = 0
-  
+  var mutex sync.RWMutex
+
   if loggingEnabled {
     f, err := os.OpenFile("fly.log", os.O_RDWR | os.O_CREATE | os.O_APPEND, 0666)
     if err != nil { return nil, err }
     defer f.Close()
     log.SetOutput(f)
   }
-  
+
+  if Config().SimpleOutput {
+    return func(msg string) { fmt.Println(msg) }, nil
+  }
+
   c, err := curse.New()
   if err != nil { return nil, err }
 
   fn := func(msg string) {
+    mutex.Lock()
+    defer mutex.Unlock()
     if loggingEnabled { log.Println(msg) }
     if msg == "DONE" {
       Spinner().Stop()

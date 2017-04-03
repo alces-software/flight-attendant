@@ -53,6 +53,7 @@ var infraDestroyCmd = &cobra.Command{
       }
     }
 
+    if err := attendant.PreflightCheck(); err != nil { return err }
     domain, err := findDomain("infraDestroy", false)
     if err != nil { return err }
 
@@ -60,7 +61,9 @@ var infraDestroyCmd = &cobra.Command{
     attendant.Spin(func() { status, err = domain.Status() })
     if err != nil { return err }
 
-    if len(status.Clusters) > 0 {
+    force, _ := cmd.Flags().GetBool("force")
+
+    if !force && len(status.Clusters) > 0 {
       return fmt.Errorf("Unable to destroy infrastructure appliance while domain '%s' has running clusters.\n", domain.Name)
     }
 
@@ -85,6 +88,7 @@ func init() {
   infraCmd.AddCommand(infraDestroyCmd)
   addDomainFlag(infraDestroyCmd, "infraDestroy")
   infraDestroyCmd.Flags().BoolP("all", "a", false, "Destroy all infrastructure appliances in the domain")
+  infraDestroyCmd.Flags().BoolP("force", "f", false, "Destroy infrastructure appliance even if clusters are running in the domain")
 }
 
 func destroyAppliance(domain *attendant.Domain, name string) error {

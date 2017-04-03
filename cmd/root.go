@@ -102,6 +102,10 @@ func init() {
   viper.BindPFlag("secret-key", RootCmd.PersistentFlags().Lookup("secret-key"))
   viper.BindPFlag("parameter-directory", RootCmd.PersistentFlags().Lookup("parameter-directory"))
 
+  if os.Getenv("FLY_SIMPLE_OUTPUT") != "" {
+    attendant.Config().SimpleOutput = true
+  }
+
   for key, val := range attendant.ConfigDefaults {
     viper.SetDefault(key, val)
   }

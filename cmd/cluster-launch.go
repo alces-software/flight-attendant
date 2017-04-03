@@ -66,6 +66,7 @@ var clusterLaunchCmd = &cobra.Command{
       }
     }
 
+    if err := attendant.PreflightCheck(); err != nil { return err }
     if err := setupTemplateSource("clusterLaunch"); err != nil { return err }
     if err := setupKeyPair("clusterLaunch"); err != nil { return err }
 
@@ -127,9 +128,6 @@ func launchCluster(domain *attendant.Domain, name string, withQ bool) (*attendan
     count = attendant.ClusterResourceCount
     if withQ {
       count += attendant.ComputeGroupResourceCount
-      if viper.GetString("compute-group-label") == "" {
-        viper.Set("compute-group-label", "default")
-      }
     }
   }
   handler, err := attendant.CreateCreateHandler(count)

@@ -36,11 +36,11 @@ import (
   "github.com/alces-software/flight-attendant/attendant"
 )
 
-// destroyCmd represents the destroy command
-var domainDestroyCmd = &cobra.Command{
-  Use:   "destroy <domain>",
-  Short: "Destroy a Flight Compute domain",
-  Long: `Destroy a Flight Compute domain.`,
+// purgeCmd represents the purge command
+var domainPurgeCmd = &cobra.Command{
+  Use:   "purge <domain>",
+  Short: "Empty a Flight Compute domain of clusters and infrastructure",
+  Long: `Empty a Flight Compute domain of clusters and infrastructure.`,
   SilenceUsage: true,
   RunE: func(cmd *cobra.Command, args []string) error {
     var err error
@@ -53,47 +53,55 @@ var domainDestroyCmd = &cobra.Command{
 
     if err := attendant.PreflightCheck(); err != nil { return err }
     domain := attendant.NewDomain(args[0], nil)
+
+    if confirmed, _ := cmd.Flags().GetBool("yes"); !confirmed {
+      fmt.Printf("You must supply `--yes` parameter to confirm you want to purge domain: %s\n", domain.Name)
+      return nil
+    }
+
     attendant.Spin(func() { status, err = domain.Status() })
     if err != nil { return err }
 
     if len(status.Clusters) + len(status.Appliances) > 0 {
-      if force, _ := cmd.Flags().GetBool("force"); force {
-        for _, cluster := range status.Clusters {
-          fmt.Printf("Destroying cluster '%s' in domain '%s' (%s)...\n\n", cluster.Name, domain.Name, attendant.Config().AwsRegion)
-          err = destroyCluster(domain, cluster.Name)
-          if err != nil { return err }
-          fmt.Println("\nCluster destroyed.\n")
-        }
-        for _, appliance := range status.Appliances {
-          fmt.Printf("Destroying appliance '%s' in domain '%s' (%s)...\n\n", appliance.Name, domain.Name, attendant.Config().AwsRegion)
-          err = destroyAppliance(domain, appliance.Name)
-          if err != nil { return err }
-          fmt.Println("\nAppliance destroyed.\n")
-        }
-      } else {
-        return fmt.Errorf("Domain '%s' (%s) has running infrastructure or cluster stacks. Can't destroy.\n", domain.Name, attendant.Config().AwsRegion)
+      var ch chan string = make(chan string)
+      handler, err := attendant.CreateDestroyHandler(0)
+      if err != nil { return err }
+      for _, cluster := range status.Clusters {
+        cluster.MessageHandler = handler
+        go func(cluster *attendant.Cluster, ch chan<- string) {
+          n := fmt.Sprintf("flight-%s-%s", cluster.Domain.Name, cluster.Name)
+          handler("DELETE_IN_PROGRESS " + n + " " + n)
+          cluster.Purge()
+          ch <- n
+        }(cluster, ch)
       }
+      for _, appliance := range status.Appliances {
+        appliance.MessageHandler = handler
+        go func(appliance *attendant.Appliance, ch chan<- string) {
+          handler("DELETE_IN_PROGRESS " + *appliance.Stack.StackName + " " + *appliance.Stack.StackName)
+          appliance.Purge()
+          ch <- *appliance.Stack.StackName
+        }(appliance, ch)
+      }
+      count := len(status.Clusters) + len(status.Appliances)
+      for item := <- ch; item != ""; item = <- ch {
+        handler("DELETE_COMPLETE " + item + " " + item)
+        count -= 1
+        if count == 0 {
+          break
+        }
+      }
+      handler("DONE")
+      fmt.Println("Purge complete.")
+    } else {
+      return fmt.Errorf("Domain '%s' (%s) has no running infrastructure or cluster stacks. Can't purge.\n", domain.Name, attendant.Config().AwsRegion)
     }
 
-    fmt.Printf("Destroying domain '%s' (%s)...\n\n", domain.Name, attendant.Config().AwsRegion)
-    err = destroyDomain(domain)
-    if err != nil { return err }
-    fmt.Println("Domain destroyed.")
     return nil
   },
 }
 
 func init() {
-  domainCmd.AddCommand(domainDestroyCmd)
-  domainDestroyCmd.Flags().BoolP("force", "f", false, "Destroy all clusters and infrastructure appliances along with the domain")
-}
-
-func destroyDomain(domain *attendant.Domain) error {
-  // XXX - count should be determined based on whether the domain is peered or not
-  handler, err := attendant.CreateDestroyHandler(attendant.DomainResourceCount)
-  if err != nil { return err }
-  domain.MessageHandler = handler
-  attendant.Spin(func() { err = domain.Destroy() })
-  domain.MessageHandler = nil
-  return err
+  domainCmd.AddCommand(domainPurgeCmd)
+  domainPurgeCmd.Flags().Bool("yes", false, "Confirm this dangerous operation")
 }

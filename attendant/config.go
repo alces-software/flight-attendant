@@ -105,6 +105,10 @@ var ConfigDefaults = map[string]string {
   "domain-network-prefix": "10.75",
 
   "allow-internet-access": "1",
+
+  "oss-group-size": "2",
+  "oss-instance-type": "c3.large-32GB-mod",
+  "mds-instance-type": "c3.large-32GB-mod",
 }
 
 type Configuration struct {
@@ -115,6 +119,7 @@ type Configuration struct {
   TemplateRoot string
   TemplateSet string
   ParameterDirectory string
+  SimpleOutput bool
 }
 
 var config *Configuration
@@ -128,6 +133,7 @@ func Config() *Configuration {
     AccessKeyName: "flight-admin",
     TemplateRoot: DefaultTemplateRoot,
     TemplateSet: FlightRelease,
+    SimpleOutput: false,
   }
   return config
 }
