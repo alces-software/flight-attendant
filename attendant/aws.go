@@ -661,7 +661,7 @@ func PreflightCheck() error {
         // this happens when credentials are incorrect
         return fmt.Errorf("Unable to connect to AWS: invalid credentials")
       default:
-        return fmt.Errorf("Unable to connect to AWS: connection to endpoint failed")
+        return fmt.Errorf("Unable to connect to AWS: connection to endpoint failed (%s)", err.Error())
       }
     }
   }
