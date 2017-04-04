@@ -103,6 +103,7 @@ type Cluster struct {
   ComputeGroups []*ComputeGroup
   TopicARN string
   MessageHandler func(msg string)
+  ExpiryTime int64
 }
 
 type ClusterDetails struct {
@@ -202,7 +203,7 @@ type ComputeGroup struct {
 }
 
 func NewCluster(name string, domain *Domain, handler func(msg string)) *Cluster {
-  return &Cluster{name, domain, nil, nil, nil, "", handler}
+  return &Cluster{name, domain, nil, nil, nil, "", handler, -1}
 }
 
 func (c *Cluster) processQueue(qArn *string) {
@@ -548,6 +549,20 @@ func (c *Cluster) Details() *ClusterDetails {
   return &details
 }
 
+func (c *Cluster) GetExpiryTime() int64 {
+  if c.ExpiryTime == -1 {
+    if c.Master == nil {
+      if svc, err := CloudFormation(); err == nil {
+        if masterStack, err := getStack(svc, "flight-" + c.Domain.Name + "-" + c.Name + "-master"); err == nil {
+          c.Master = &Master{masterStack}
+          c.ExpiryTime, err = strconv.ParseInt(getStackTag(c.Master.Stack, "flight:expiry"), 10, 64)
+        }
+      }
+    }
+  }
+  return c.ExpiryTime
+}
+
 func (c *Cluster) GetDetails() string {
   if c.Master == nil {
     if svc, err := CloudFormation(); err == nil {
@@ -700,7 +715,11 @@ func createMaster(cluster *Cluster, svc *cloudformation.CloudFormation) error {
   stackName := fmt.Sprintf("flight-%s-%s-master", cluster.Domain.Name, cluster.Name)
   url := TemplateUrl(clusterMasterTemplate)
 
-  stack, err := createStack(svc, launchParams, cluster.Tags(), url, stackName, "master", cluster.TopicARN, cluster.Domain)
+  tags := cluster.Tags()
+  if cluster.ExpiryTime > 0 {
+    tags = append(tags, &cloudformation.Tag{Key: aws.String("flight:expiry"), Value: aws.String(strconv.FormatInt(cluster.ExpiryTime, 10))})
+  }
+  stack, err := createStack(svc, launchParams, tags, url, stackName, "master", cluster.TopicARN, cluster.Domain)
   if err != nil { return err }
 
   cluster.Master = &Master{stack}
@@ -781,7 +800,11 @@ func createSoloCluster(cluster *Cluster, svc *cloudformation.CloudFormation) err
   stackName := fmt.Sprintf("flight-cluster-%s", cluster.Name)
   url := TemplateUrl(soloClusterTemplate)
 
-  stack, err := createStack(svc, launchParams, cluster.Tags(), url, stackName, "solo", cluster.TopicARN, nil)
+  tags := cluster.Tags()
+  if cluster.ExpiryTime > 0 {
+    tags = append(tags, &cloudformation.Tag{Key: aws.String("flight:expiry"), Value: aws.String(strconv.FormatInt(cluster.ExpiryTime, 10))})
+  }
+  stack, err := createStack(svc, launchParams, tags, url, stackName, "solo", cluster.TopicARN, nil)
   if err != nil { return err }
 
   cluster.Master = &Master{stack}
@@ -885,4 +908,23 @@ func loadComponentParameters(paramsFile string) map[string]string {
     if err != nil { fmt.Println(err.Error()) }
   }
   return params
+}
+
+func ExpiredClusters() ([]string, error) {
+  stacks, err := ExpiredStacks()
+  names := []string{}
+  if err != nil { return nil, err }
+  for _, stack := range stacks {
+    var descriptor string
+    name := getStackTag(stack, "flight:cluster")
+    stackType := getStackTag(stack, "flight:type")
+    if stackType == "master" {
+      domain := getStackTag(stack, "flight:domain")
+      descriptor = fmt.Sprintf("%s:%s", name, domain)
+    } else {
+      descriptor = fmt.Sprintf("%s:%s", name, "SOLO")
+    }
+    names = append(names, descriptor)
+  }
+  return names, nil
 }
