@@ -30,7 +30,8 @@ package cmd
 
 import (
   "fmt"
-
+  "strings"
+  "time"
   "github.com/spf13/cobra"
   "github.com/spf13/viper"
 
@@ -66,6 +67,15 @@ var clusterLaunchCmd = &cobra.Command{
       }
     }
 
+    var expiryTime int64
+
+    runtime, _ := cmd.Flags().GetInt("runtime")
+    if runtime > 0 {
+      duration, err := time.ParseDuration(fmt.Sprintf("%dm",runtime))
+      if err != nil { return err }
+      expiryTime = time.Now().Add(duration).Unix()
+    }
+    
     if err := attendant.PreflightCheck(); err != nil { return err }
     if err := setupTemplateSource("clusterLaunch"); err != nil { return err }
     if err := setupKeyPair("clusterLaunch"); err != nil { return err }
@@ -87,17 +97,23 @@ var clusterLaunchCmd = &cobra.Command{
 
       fmt.Printf("Launching cluster '%s' in domain '%s' (%s)...\n\n", args[0], domain.Name, attendant.Config().AwsRegion)
     }
-    cluster, err = launchCluster(domain, args[0], withQ)
+    cluster, err = launchCluster(domain, args[0], withQ, expiryTime)
     if err != nil { return err }
 
     fmt.Println("\nCluster launched.\n")
     fmt.Println("== Cluster details ==")
     fmt.Println(cluster.GetDetails() + "\n")
-    ip := cluster.Master.AccessIP()
-    if ip == "" {
-      ip = cluster.Master.PrivateIP()
+    sshProxy := cluster.Master.SSHProxy()
+    if sshProxy != "" {
+      proxyParts := strings.Split(sshProxy, ":")
+      fmt.Printf("\nAccess via:\n\n\tssh -p %s %s@%s\n", proxyParts[1], cluster.Master.Username(), proxyParts[0])
+    } else {
+      ip := cluster.Master.AccessIP()
+      if ip == "" {
+        ip = cluster.Master.PrivateIP()
+      }
+      fmt.Println("\nAccess via:\n\n\tssh " + cluster.Master.Username() + "@" + ip)
     }
-    fmt.Println("\nAccess via:\n\n\tssh " + cluster.Master.Username() + "@" + ip)
     return nil
   },
 }
@@ -105,6 +121,7 @@ var clusterLaunchCmd = &cobra.Command{
 func init() {
   clusterCmd.AddCommand(clusterLaunchCmd)
   clusterLaunchCmd.Flags().BoolP("solo", "s", false, "Launch a Flight Compute Solo cluster")
+  clusterLaunchCmd.Flags().IntP("runtime", "r", 0, "Maximum runtime for cluster (minutes)")
 
   clusterLaunchCmd.Flags().BoolP("with-queue", "q", false, "Launch with a compute queue")
   viper.BindPFlag("launch-with-default-queue", clusterLaunchCmd.Flags().Lookup("with-queue"))
@@ -120,7 +137,7 @@ func init() {
   addTemplateRootFlag(clusterLaunchCmd, "clusterLaunch")
 }
 
-func launchCluster(domain *attendant.Domain, name string, withQ bool) (*attendant.Cluster, error) {
+func launchCluster(domain *attendant.Domain, name string, withQ bool, expiryTime int64) (*attendant.Cluster, error) {
   var count int
   if domain == nil {
     count = attendant.SoloClusterResourceCount
@@ -133,6 +150,7 @@ func launchCluster(domain *attendant.Domain, name string, withQ bool) (*attendan
   handler, err := attendant.CreateCreateHandler(count)
   if err != nil { return nil, err }
   cluster := attendant.NewCluster(name, domain, handler)
+  cluster.ExpiryTime = expiryTime
   attendant.Spin(func() { err = cluster.Create(withQ) })
   cluster.MessageHandler = nil
   return cluster, err

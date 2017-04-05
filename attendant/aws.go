@@ -31,7 +31,9 @@ package attendant
 import (
   "fmt"
   "regexp"
+  "strconv"
   "strings"
+  "time"
   "encoding/json"
   "github.com/aws/aws-sdk-go/aws"
   "github.com/aws/aws-sdk-go/aws/awserr"
@@ -403,7 +405,9 @@ func eachRunningStackAll(fn func(stack *cloudformation.Stack)) error {
         return err
       }
     }
-    fn(stacksResp.Stacks[0])
+    if len(stacksResp.Stacks) > 0 {
+      fn(stacksResp.Stacks[0])
+    }
   }
 
   return err
@@ -666,4 +670,18 @@ func PreflightCheck() error {
     }
   }
   return nil
+}
+
+func ExpiredStacks() ([]*cloudformation.Stack, error) {
+  var expiredStacks = []*cloudformation.Stack{}
+  err := eachRunningStack(func(stack *cloudformation.Stack) {
+    expiryTimeStr := getStackTag(stack, "flight:expiry")
+    if expiryTimeStr != "" {
+      expiryTime, err := strconv.ParseInt(expiryTimeStr, 10, 64)
+      if err == nil && expiryTime <= time.Now().Unix() {
+        expiredStacks = append(expiredStacks, stack)
+      }
+    }
+  })
+  return expiredStacks, err
 }
