@@ -405,7 +405,9 @@ func eachRunningStackAll(fn func(stack *cloudformation.Stack)) error {
         return err
       }
     }
-    fn(stacksResp.Stacks[0])
+    if len(stacksResp.Stacks) > 0 {
+      fn(stacksResp.Stacks[0])
+    }
   }
 
   return err
