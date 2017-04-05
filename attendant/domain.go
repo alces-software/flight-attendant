@@ -163,7 +163,7 @@ func SoloStatus() (*DomainStatus, error) {
     stackType := getStackTag(stack, "flight:type")
     if stackType == "solo" {
       clusterName := getStackTag(stack, "flight:cluster")
-      cluster := &Cluster{Name: clusterName, Master: &Master{stack}}
+      cluster := &Cluster{Name: clusterName, Master: &Master{stack}, ExpiryTime: -1}
       soloStatus.Clusters[clusterName] = cluster
     }
   })
