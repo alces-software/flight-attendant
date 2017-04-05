@@ -114,7 +114,7 @@ var clusterLaunchCmd = &cobra.Command{
 func init() {
   clusterCmd.AddCommand(clusterLaunchCmd)
   clusterLaunchCmd.Flags().BoolP("solo", "s", false, "Launch a Flight Compute Solo cluster")
-  clusterLaunchCmd.Flags().IntP("runtime", "r", 0, "Maximum runtime for cluster (hours)")
+  clusterLaunchCmd.Flags().IntP("runtime", "r", 0, "Maximum runtime for cluster (minutes)")
 
   clusterLaunchCmd.Flags().BoolP("with-queue", "q", false, "Launch with a compute queue")
   viper.BindPFlag("launch-with-default-queue", clusterLaunchCmd.Flags().Lookup("with-queue"))

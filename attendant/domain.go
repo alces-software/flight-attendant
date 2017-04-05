@@ -204,7 +204,7 @@ func (d *Domain) Status() (*DomainStatus, error) {
           clusterName := getStackTag(stack, "flight:cluster")
           cluster, exists := status.Clusters[clusterName]
           if ! exists {
-            cluster = &Cluster{Name: clusterName, Domain: d}
+            cluster = &Cluster{Name: clusterName, Domain: d, ExpiryTime: -1}
             status.Clusters[clusterName] = cluster
           }
           if stackType == "master" {
