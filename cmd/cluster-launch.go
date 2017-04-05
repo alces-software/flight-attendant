@@ -30,6 +30,7 @@ package cmd
 
 import (
   "fmt"
+  "strings"
   "time"
   "github.com/spf13/cobra"
   "github.com/spf13/viper"
@@ -102,11 +103,17 @@ var clusterLaunchCmd = &cobra.Command{
     fmt.Println("\nCluster launched.\n")
     fmt.Println("== Cluster details ==")
     fmt.Println(cluster.GetDetails() + "\n")
-    ip := cluster.Master.AccessIP()
-    if ip == "" {
-      ip = cluster.Master.PrivateIP()
+    sshProxy := cluster.Master.SSHProxy()
+    if sshProxy != "" {
+      proxyParts := strings.Split(sshProxy, ":")
+      fmt.Printf("\nAccess via:\n\n\tssh -p %s %s@%s\n", proxyParts[1], cluster.Master.Username(), proxyParts[0])
+    } else {
+      ip := cluster.Master.AccessIP()
+      if ip == "" {
+        ip = cluster.Master.PrivateIP()
+      }
+      fmt.Println("\nAccess via:\n\n\tssh " + cluster.Master.Username() + "@" + ip)
     }
-    fmt.Println("\nAccess via:\n\n\tssh " + cluster.Master.Username() + "@" + ip)
     return nil
   },
 }

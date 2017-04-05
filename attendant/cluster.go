@@ -116,6 +116,8 @@ type ClusterDetails struct {
   Queues []QueueDetails
   Components []string
   ExpiryTime int64
+  VPNAccess string
+  SSHAccess string
 }
 
 type QueueDetails struct {
@@ -177,6 +179,10 @@ func (m *Master) AccessIP() string {
 
 func (m *Master) PrivateIP() string {
   return getStackOutput(m.Stack, "MasterPrivateIP")
+}
+
+func (m *Master) SSHProxy() string {
+  return getStackConfigValue(m.Stack, "SSH Access")
 }
 
 func (m *Master) Username() string {
@@ -538,6 +544,8 @@ func (c *Cluster) Details() *ClusterDetails {
     if details.Uuid == "" { details.Uuid = "<unknown>" }
     details.Token = getStackConfigValue(c.Master.Stack, "Token")
     if details.Token == "" { details.Token = "<unknown>" }
+    details.VPNAccess = getStackConfigValue(c.Master.Stack, "VPN Access")
+    details.SSHAccess = getStackConfigValue(c.Master.Stack, "SSH Access")
     details.ExpiryTime, _ = strconv.ParseInt(getStackTag(c.Master.Stack, "flight:expiry"), 10, 64)
 
     if (len(c.ComputeGroups) > 0) {
@@ -575,16 +583,27 @@ func (c *Cluster) GetDetails() string {
     if url == "" {
       url = getStackOutput(c.Master.Stack, "PrivateWebAccess")
     }
+    details := fmt.Sprintf("Administrator username: %s\nIP address: %s\nKey pair: %s", username, ip, keypair)
+    if url != "" {
+      details += "\nAccess URL: " + url
+    }
+
+    vpnAccess := getStackConfigValue(c.Master.Stack, "VPN Access")
+    sshAccess := getStackConfigValue(c.Master.Stack, "SSH Access")
+    if vpnAccess != "" {
+      details += fmt.Sprintf("VPN proxy: %s\n", vpnAccess)
+    }
+    if sshAccess != "" {
+      details = fmt.Sprintf("SSH proxy: %s\n", sshAccess)
+    }
+
     c.LoadComputeGroups()
     componentStacks, _ := getComponentStacksForCluster(c)
     uuid := getStackConfigValue(c.Master.Stack, "UUID")
     if uuid == "" { uuid = "<unknown>" }
     token := getStackConfigValue(c.Master.Stack, "Token")
     if token == "" { token = "<unknown>" }
-    details := fmt.Sprintf("Administrator username: %s\nIP address: %s\nKey pair: %s", username, ip, keypair)
-    if url != "" {
-      details += "\nAccess URL: " + url
-    }
+
     details += fmt.Sprintf("\nUUID: %s\nToken: %s\n", uuid, token)
     expiryTime := c.GetExpiryTime()
     if expiryTime > 0 {
