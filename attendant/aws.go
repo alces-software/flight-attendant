@@ -231,8 +231,13 @@ func awaitStack(svc *cloudformation.CloudFormation, stackName string) (*cloudfor
   err := svc.WaitUntilStackCreateComplete(stackParams)
   if err != nil { return nil, err }
 
-  stacksResp, err := svc.DescribeStacks(stackParams)
+  o, err := throttleProtected(
+    func() (interface{}, error) {
+      return svc.DescribeStacks(stackParams)
+    },
+  )
   if err != nil { return nil, err }
+  stacksResp := o.(*cloudformation.DescribeStacksOutput)
 
   return stacksResp.Stacks[0], nil
 }
@@ -429,6 +434,25 @@ func eachRunningStackAll(fn func(stack *cloudformation.Stack)) error {
   }
 
   return err
+}
+
+func throttleProtected(fn func() (interface{}, error)) (interface{}, error) {
+  throttleWait := time.Millisecond * 500
+  o, err := fn()
+  for err != nil {
+    if strings.HasPrefix(err.Error(), "Throttling: Rate exceeded") {
+      time.Sleep(throttleWait)
+      // 500ms, 1s, 2s, 4s, 8s
+      throttleWait = throttleWait * 2
+      if throttleWait > time.Second * 8 {
+        return nil, err
+      }
+      o, err = fn()
+    } else {
+      return nil, err
+    }
+  }
+  return o, nil
 }
 
 func eachRunningStack(fn func(stack *cloudformation.Stack)) error {
