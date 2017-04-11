@@ -218,7 +218,9 @@ func NewCluster(name string, domain *Domain, handler func(msg string)) *Cluster 
 func (c *Cluster) processQueue(qArn *string) {
   for c.MessageHandler != nil {
     time.Sleep(500 * time.Millisecond)
-    receiveMessage(qArn, c.MessageHandler)
+    if c.MessageHandler != nil {
+      receiveMessage(qArn, c.MessageHandler)
+    }
   }
 }
 
