@@ -141,6 +141,10 @@ func createHandlerFunction(resourceTotal int, inProgressText, completeText, comp
         return
       } else {
         Spinner().Stop()
+        // attempt to stop gaps appearing, assuming that it's a race
+        // condition between the following Printf and the Spinner
+        // actually getting around to stopping.
+        time.Sleep(150*time.Millisecond)
         if _, exists := resRegistry[res]; !exists {
           fmt.Printf("%s  %s\n", completionRune, name)
           resRegistry[res] = len(resRegistry)
