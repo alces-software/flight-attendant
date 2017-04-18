@@ -83,10 +83,17 @@ var clusterLaunchCmd = &cobra.Command{
     var cluster *attendant.Cluster
     var domain *attendant.Domain
     var err error
+    var soloMode string
     solo, _ := cmd.Flags().GetBool("solo")
-    if solo {
+    soloLegacy, _ := cmd.Flags().GetBool("solo-legacy")
+    if solo || soloLegacy {
       fmt.Printf("Launching Flight Compute Solo cluster '%s' (%s)...\n\n", args[0], attendant.Config().AwsRegion)
       domain = nil
+      if soloLegacy {
+        soloMode = "legacy"
+      } else {
+        soloMode = "standard"
+      }
     } else {
       domain, err = findDomain("clusterLaunch", true)
       if err != nil { return err }
@@ -97,7 +104,7 @@ var clusterLaunchCmd = &cobra.Command{
 
       fmt.Printf("Launching cluster '%s' in domain '%s' (%s)...\n\n", args[0], domain.Name, attendant.Config().AwsRegion)
     }
-    cluster, err = launchCluster(domain, args[0], withQ, expiryTime)
+    cluster, err = launchCluster(domain, args[0], withQ, expiryTime, soloMode)
     if err != nil { return err }
 
     fmt.Println("\nCluster launched.\n")
@@ -121,6 +128,7 @@ var clusterLaunchCmd = &cobra.Command{
 func init() {
   clusterCmd.AddCommand(clusterLaunchCmd)
   clusterLaunchCmd.Flags().BoolP("solo", "s", false, "Launch a Flight Compute Solo cluster")
+  clusterLaunchCmd.Flags().BoolP("solo-legacy", "l", false, "Launch a legacy Flight Compute Solo cluster")
   clusterLaunchCmd.Flags().IntP("runtime", "r", 0, "Maximum runtime for cluster (minutes)")
 
   clusterLaunchCmd.Flags().BoolP("with-queue", "q", false, "Launch with a compute queue")
@@ -137,10 +145,14 @@ func init() {
   addTemplateRootFlag(clusterLaunchCmd, "clusterLaunch")
 }
 
-func launchCluster(domain *attendant.Domain, name string, withQ bool, expiryTime int64) (*attendant.Cluster, error) {
+func launchCluster(domain *attendant.Domain, name string, withQ bool, expiryTime int64, soloMode string) (*attendant.Cluster, error) {
   var count int
   if domain == nil {
-    count = attendant.SoloClusterResourceCount
+    if soloMode == "legacy" {
+      count = attendant.SoloLegacyClusterResourceCount
+    } else {
+      count = attendant.SoloClusterResourceCount
+    }
   } else {
     count = attendant.ClusterResourceCount
     if withQ {
@@ -150,6 +162,7 @@ func launchCluster(domain *attendant.Domain, name string, withQ bool, expiryTime
   handler, err := attendant.CreateCreateHandler(count)
   if err != nil { return nil, err }
   cluster := attendant.NewCluster(name, domain, handler)
+  cluster.SoloMode = soloMode
   cluster.ExpiryTime = expiryTime
   attendant.Spin(func() { err = cluster.Create(withQ) })
   cluster.MessageHandler = nil

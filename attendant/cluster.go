@@ -58,6 +58,13 @@ var MasterInstanceTypes = []string{
   "enterprise-x1.32xlarge",
 }
 
+var KnownConfigValues = []string{
+  "UUID",
+  "Token",
+  "VPN Access",
+  "SSH Access",
+}
+
 func IsValidMasterInstanceType(instanceType string) bool {
   return containsS(MasterInstanceTypes, instanceType)
 }
@@ -89,6 +96,7 @@ var ComputeInstanceTypes = []string{
 // compute: 10 (9)
 var ClusterResourceCount int = 35
 var SoloClusterResourceCount int = 46
+var SoloLegacyClusterResourceCount int = 48
 var ComputeGroupResourceCount int = 10
 
 func IsValidComputeInstanceType(instanceType string) bool {
@@ -104,6 +112,7 @@ type Cluster struct {
   TopicARN string
   MessageHandler func(msg string)
   ExpiryTime int64
+  SoloMode string
 }
 
 type ClusterDetails struct {
@@ -118,6 +127,7 @@ type ClusterDetails struct {
   ExpiryTime int64
   VPNAccess string
   SSHAccess string
+  ConfigValues map[string]string
 }
 
 type QueueDetails struct {
@@ -212,7 +222,7 @@ type ComputeGroup struct {
 }
 
 func NewCluster(name string, domain *Domain, handler func(msg string)) *Cluster {
-  return &Cluster{name, domain, nil, nil, nil, "", handler, -1}
+  return &Cluster{name, domain, nil, nil, nil, "", handler, -1, ""}
 }
 
 func (c *Cluster) processQueue(qArn *string) {
@@ -549,6 +559,13 @@ func (c *Cluster) Details() *ClusterDetails {
     details.VPNAccess = getStackConfigValue(c.Master.Stack, "VPN Access")
     details.SSHAccess = getStackConfigValue(c.Master.Stack, "SSH Access")
     details.ExpiryTime, _ = strconv.ParseInt(getStackTag(c.Master.Stack, "flight:expiry"), 10, 64)
+    // add other stack config values
+    details.ConfigValues = make(map[string]string)
+    eachStackConfigValue(c.Master.Stack, func(key string, val string) {
+      if ! containsS(KnownConfigValues, key) {
+        details.ConfigValues[key] = val
+      }
+    })
 
     if (len(c.ComputeGroups) > 0) {
       details.Queues = []QueueDetails{}
@@ -585,9 +602,9 @@ func (c *Cluster) GetDetails() string {
     if url == "" {
       url = getStackOutput(c.Master.Stack, "PrivateWebAccess")
     }
-    details := fmt.Sprintf("Administrator username: %s\nIP address: %s\nKey pair: %s", username, ip, keypair)
+    details := fmt.Sprintf("Administrator username: %s\nIP address: %s\nKey pair: %s\n", username, ip, keypair)
     if url != "" {
-      details += "\nAccess URL: " + url
+      details += "Access URL: " + url + "\n"
     }
 
     vpnAccess := getStackConfigValue(c.Master.Stack, "VPN Access")
@@ -596,8 +613,14 @@ func (c *Cluster) GetDetails() string {
       details += fmt.Sprintf("VPN proxy: %s\n", vpnAccess)
     }
     if sshAccess != "" {
-      details = fmt.Sprintf("SSH proxy: %s\n", sshAccess)
+      details += fmt.Sprintf("SSH proxy: %s\n", sshAccess)
     }
+    // add other stack config values
+    eachStackConfigValue(c.Master.Stack, func(key string, val string) {
+      if ! containsS(KnownConfigValues, key) {
+        details += fmt.Sprintf("%s: %s\n", key, val)
+      }
+    })
 
     c.LoadComputeGroups()
     componentStacks, _ := getComponentStacksForCluster(c)
@@ -606,7 +629,7 @@ func (c *Cluster) GetDetails() string {
     token := getStackConfigValue(c.Master.Stack, "Token")
     if token == "" { token = "<unknown>" }
 
-    details += fmt.Sprintf("\nUUID: %s\nToken: %s\n", uuid, token)
+    details += fmt.Sprintf("UUID: %s\nToken: %s\n", uuid, token)
     expiryTime := c.GetExpiryTime()
     if expiryTime > 0 {
       details += fmt.Sprintf("Expiry: %s\n", time.Unix(expiryTime, 0).Format(time.RFC3339))
@@ -840,8 +863,13 @@ func createClusterNetwork(cluster *Cluster, svc *cloudformation.CloudFormation) 
 }
 
 func createSoloCluster(cluster *Cluster, svc *cloudformation.CloudFormation) error {
-  launchParams := createClusterComponentLaunchParameters(cluster,
-    loadParameterSet("solo", SoloParameters))
+  var parameterSet map[string]string
+  if cluster.SoloMode == "legacy" {
+    parameterSet = loadParameterSet("solo-legacy", LegacySoloParameters)
+  } else {
+    parameterSet = loadParameterSet("solo", SoloParameters)
+  }
+  launchParams := createClusterComponentLaunchParameters(cluster, parameterSet)
   stackName := fmt.Sprintf("flight-cluster-%s", cluster.Name)
   url := TemplateUrl(soloClusterTemplate)
 

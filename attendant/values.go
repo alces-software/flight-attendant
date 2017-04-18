@@ -321,12 +321,45 @@ var SoloParameters = map[string]string {
   "SwapSizeMax": "%SWAP_SIZE_MAX%",
 }
 
+var LegacySoloParameters = map[string]string {
+  "ClusterName": "%CLUSTER_NAME%",
+  "AccessKeyName": "%ACCESS_KEY_NAME%",
+  "AccessUsername": "%ADMIN_USER_NAME%",
+  "AccessNetwork": "%ACCESS_NETWORK%",
+
+  "FlightSchedulerType": "%SCHEDULER_TYPE%",
+  "FlightPreloadSoftware": "%PRELOAD_SOFTWARE%",
+  "FlightFeatures": "%MASTER_FEATURES%",
+  "FlightProfileBucket": "%PROFILE_BUCKET%",
+  "FlightProfiles": "%MASTER_PROFILES%",
+
+  "LoginInstanceType": "%MASTER_INSTANCE_TYPE%",
+  "LoginInstanceTypeOther": "%MASTER_INSTANCE_OVERRIDE%",
+
+  "ComputeInstanceType": "%COMPUTE_INSTANCE_TYPE%",
+  "ComputeInstanceTypeOther": "%COMPUTE_INSTANCE_OVERRIDE%",
+  "ComputeSpotPrice": "%COMPUTE_SPOT_PRICE%",
+  "ComputeAutoscalingPolicy": "%COMPUTE_AUTOSCALING_POLICY%",
+  "ComputeInitialNodes": "%COMPUTE_INITIAL_NODES%",
+
+  "VolumeLayout": "%MASTER_VOLUME_LAYOUT%",
+  "VolumeEncryptionPolicy": "%MASTER_VOLUME_ENCRYPTION_POLICY%",
+  "LoginSystemVolumeSize": "%MASTER_SYSTEM_VOLUME_SIZE%",
+  "LoginSystemVolumeType": "%MASTER_SYSTEM_VOLUME_TYPE%",
+  "HomeVolumeSize": "%MASTER_APPS_VOLUME_SIZE%",
+  "AppsVolumeSize": "%MASTER_APPS_VOLUME_SIZE%",
+  "HomeVolumeType": "%MASTER_HOME_VOLUME_TYPE%",
+  "AppsVolumeType": "%MASTER_APPS_VOLUME_TYPE%",
+  "ComputeSystemVolumeType": "%COMPUTE_SYSTEM_VOLUME_TYPE%",
+}
+
 var ParameterSets = map[string]*map[string]string {
   "domain": &DomainParameters,
   "cluster-network": &ClusterNetworkParameters,
   "cluster-master": &ClusterMasterParameters,
   "cluster-compute": &ClusterComputeParameters,
   "solo": &SoloParameters,
+  "solo-legacy": &LegacySoloParameters,
   "directory": &DomainApplianceParameters,
   "monitor": &DomainApplianceParameters,
   "storage-manager": &BasicApplianceParameters,
