@@ -317,6 +317,24 @@ func getStackOutput(stack *cloudformation.Stack, key string) string {
   return v
 }
 
+func eachStackConfigValue(stack *cloudformation.Stack, processor func(string, string)) {
+  configResult := getStackOutput(stack, "ConfigurationResult")
+  if configResult != "" {
+    configData := strings.Split(strings.Split(configResult, "\"")[3],";")
+    for _, configDatum := range configData {
+      configTuple := strings.Split(configDatum, ":")
+      if len(configTuple) == 1 {
+        configTuple = strings.Split(configDatum, "=")
+      }
+      if len(configTuple) == 1 {
+        processor(configTuple[0], "true")
+      } else {
+        processor(configTuple[0], strings.TrimSpace(configTuple[1]))
+      }
+    }
+  }
+}
+
 func getStackConfigValue(stack *cloudformation.Stack, key string) string {
   var v string
   configResult := getStackOutput(stack, "ConfigurationResult")
