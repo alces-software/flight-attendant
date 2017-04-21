@@ -634,6 +634,7 @@ func (c *Cluster) GetDetails() string {
     if expiryTime > 0 {
       details += fmt.Sprintf("Expiry: %s\n", time.Unix(expiryTime, 0).Format(time.RFC3339))
     }
+    details += fmt.Sprintf("Creation: %s\n", c.Master.Stack.CreationTime.Local().Format(time.RFC3339))
     if (len(c.ComputeGroups) > 0) {
       details += "\nQueues: "
       queueDetails := []string{}
