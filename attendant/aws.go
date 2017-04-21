@@ -49,6 +49,7 @@ import (
 )
 
 var awsSession *session.Session
+var allStacks, allFlightStacks []*cloudformation.Stack
 
 var sqsPolicyTemplate = `
 {
@@ -128,9 +129,14 @@ func AutoScaling() (*autoscaling.AutoScaling, error) {
 func IsValidKeyPairName(name string) bool {
   svc, err := EC2()
   if err != nil { return false }
-  resp, err := svc.DescribeKeyPairs(&ec2.DescribeKeyPairsInput{
-    KeyNames: []*string{&name},
-  })
+  o, err := throttleProtected(
+    func() (interface{}, error) {
+      return svc.DescribeKeyPairs(&ec2.DescribeKeyPairsInput{
+        KeyNames: []*string{&name},
+      })
+    },
+  )
+  resp := o.(*ec2.DescribeKeyPairsOutput)
   if err != nil { return false}
   if len(resp.KeyPairs) == 0 { return false }
   return true
@@ -142,21 +148,40 @@ func CleanFlightEventHandling(stacks []string, dryrun bool, messageHandler func(
   sqsSvc, err := SQS()
   if err != nil { return err }
 
-  topicsResp, err := snsSvc.ListTopics(&sns.ListTopicsInput{})
+  o, err := throttleProtected(
+    func() (interface{}, error) {
+      return snsSvc.ListTopics(&sns.ListTopicsInput{})
+    },
+  )
   if err != nil { return err }
+  topicsResp := o.(*sns.ListTopicsOutput)
+
   for _, topic := range topicsResp.Topics {
     topicName := strings.Split(*topic.TopicArn,":")[5]
     if strings.HasPrefix(topicName, "flight-") {
       if ! containsS(stacks, topicName) {
         messageHandler("🗑  Remove topic: " + topicName)
 
-        subResp, err := snsSvc.ListSubscriptionsByTopic(&sns.ListSubscriptionsByTopicInput{TopicArn: topic.TopicArn})
+        o, err := throttleProtected(
+          func() (interface{}, error) {
+            return snsSvc.ListSubscriptionsByTopic(&sns.ListSubscriptionsByTopicInput{TopicArn: topic.TopicArn})
+          },
+        )
         if err != nil { return err }
+        subResp := o.(*sns.ListSubscriptionsByTopicOutput)
         if !dryrun {
           for _, sub := range subResp.Subscriptions {
-            snsSvc.Unsubscribe(&sns.UnsubscribeInput{SubscriptionArn: sub.SubscriptionArn})
+            throttleProtected(
+              func() (interface{}, error) {
+                return snsSvc.Unsubscribe(&sns.UnsubscribeInput{SubscriptionArn: sub.SubscriptionArn})
+              },
+            )
           }
-          snsSvc.DeleteTopic(&sns.DeleteTopicInput{TopicArn: topic.TopicArn})
+          throttleProtected(
+            func() (interface{}, error) {
+              return snsSvc.DeleteTopic(&sns.DeleteTopicInput{TopicArn: topic.TopicArn})
+            },
+          )
         }
       } else {
         messageHandler("✅  Retain topic: " + topicName)
@@ -164,15 +189,25 @@ func CleanFlightEventHandling(stacks []string, dryrun bool, messageHandler func(
     }
   }
 
-  queueResp, err := sqsSvc.ListQueues(&sqs.ListQueuesInput{})
+  o, err = throttleProtected(
+    func() (interface{}, error) {
+      return sqsSvc.ListQueues(&sqs.ListQueuesInput{})
+    },
+  )
   if err != nil { return err }
+  queueResp := o.(*sqs.ListQueuesOutput)
+
   for _, queue := range queueResp.QueueUrls {
     queueName := strings.Split(*queue,"/")[4]
     if strings.HasPrefix(queueName, "flight-") {
       if ! containsS(stacks, queueName) {
         messageHandler("🗑  Remove queue: " + queueName)
         if !dryrun {
-          _, err = sqsSvc.DeleteQueue(&sqs.DeleteQueueInput{QueueUrl: queue})
+          throttleProtected(
+            func() (interface{}, error) {
+              return sqsSvc.DeleteQueue(&sqs.DeleteQueueInput{QueueUrl: queue})
+            },
+          )
         }
       } else {
         messageHandler("✅  Retain queue: " + queueName)
@@ -219,7 +254,11 @@ func createStack(
     Tags: stackTags,
   }
 
-  _, err := svc.CreateStack(createParams)
+  _, err := throttleProtected(
+    func() (interface{}, error) {
+      return svc.CreateStack(createParams)
+    },
+  )
   if err != nil { return nil, err }
 
   return awaitStack(svc, stackName)
@@ -228,7 +267,11 @@ func createStack(
 func awaitStack(svc *cloudformation.CloudFormation, stackName string) (*cloudformation.Stack, error) {
   stackParams := &cloudformation.DescribeStacksInput{StackName: aws.String(stackName)}
 
-  err := svc.WaitUntilStackCreateComplete(stackParams)
+  _, err := throttleProtected(
+    func() (interface{}, error) {
+      return nil, svc.WaitUntilStackCreateComplete(stackParams)
+    },
+  )
   if err != nil { return nil, err }
 
   o, err := throttleProtected(
@@ -244,11 +287,19 @@ func awaitStack(svc *cloudformation.CloudFormation, stackName string) (*cloudfor
 
 func destroyStack(svc *cloudformation.CloudFormation, stackName string) error {
   deleteParams := &cloudformation.DeleteStackInput{StackName: aws.String(stackName)}
-  _, err := svc.DeleteStack(deleteParams)
+  _, err := throttleProtected(
+    func() (interface{}, error) {
+      return svc.DeleteStack(deleteParams)
+    },
+  )
   if err != nil { return err }
 
   stackParams := &cloudformation.DescribeStacksInput{StackName: aws.String(stackName)}
-  err = svc.WaitUntilStackDeleteComplete(stackParams)
+  _, err = throttleProtected(
+    func() (interface{}, error) {
+      return nil, svc.WaitUntilStackDeleteComplete(stackParams)
+    },
+  )
   if err != nil { return err }
 
   return nil
@@ -258,23 +309,33 @@ func destroyDetachedNICs(subnetId string) error {
   svc, err := EC2()
   if err != nil { return err }
   // list NICs for subnet
-  resp, err := svc.DescribeNetworkInterfaces(&ec2.DescribeNetworkInterfacesInput{
-    Filters: []*ec2.Filter{
-      &ec2.Filter{
-        Name: aws.String("subnet-id"),
-        Values: []*string{aws.String(subnetId)},
-      },
-      &ec2.Filter{
-        Name: aws.String("attachment.status"),
-        Values: []*string{aws.String("detached")},
-      },
+  o, err := throttleProtected(
+    func() (interface{}, error) {
+      return svc.DescribeNetworkInterfaces(&ec2.DescribeNetworkInterfacesInput{
+        Filters: []*ec2.Filter{
+          &ec2.Filter{
+            Name: aws.String("subnet-id"),
+            Values: []*string{aws.String(subnetId)},
+          },
+          &ec2.Filter{
+            Name: aws.String("attachment.status"),
+            Values: []*string{aws.String("detached")},
+          },
+        },
+      })
     },
-  })
+  )
   if err != nil { return err }
+  resp := o.(*ec2.DescribeNetworkInterfacesOutput)
+
   for _, nic := range resp.NetworkInterfaces {
-    _, err := svc.DeleteNetworkInterface(&ec2.DeleteNetworkInterfaceInput{
-      NetworkInterfaceId: nic.NetworkInterfaceId,
-    })
+    _, err := throttleProtected(
+      func() (interface{}, error) {
+        return svc.DeleteNetworkInterface(&ec2.DeleteNetworkInterfaceInput{
+          NetworkInterfaceId: nic.NetworkInterfaceId,
+        })
+      },
+    )
     if err != nil { return err }
   }
   return nil
@@ -283,8 +344,13 @@ func destroyDetachedNICs(subnetId string) error {
 func getStack(svc *cloudformation.CloudFormation, stackName string) (*cloudformation.Stack, error) {
   stackParams := &cloudformation.DescribeStacksInput{StackName: aws.String(stackName)}
 
-  stacksResp, err := svc.DescribeStacks(stackParams)
+  o, err := throttleProtected(
+    func() (interface{}, error) {
+      return svc.DescribeStacks(stackParams)
+    },
+  )
   if err != nil { return nil, err }
+  stacksResp := o.(*cloudformation.DescribeStacksOutput)
 
   return stacksResp.Stacks[0], nil
 }
@@ -398,53 +464,77 @@ func getComputeGroupStacksForCluster(cluster *Cluster) ([]*cloudformation.Stack,
 }
 
 func eachRunningStackAll(fn func(stack *cloudformation.Stack)) error {
-  svc, err := CloudFormation()
-  if err != nil { return err }
+  if len(allStacks) == 0 {
+    svc, err := CloudFormation()
+    if err != nil { return err }
 
-  listParams := &cloudformation.ListStacksInput{
-    StackStatusFilter: []*string{
-      aws.String("CREATE_COMPLETE"),
-      aws.String("CREATE_IN_PROGRESS"),
-    },
-  }
-
-  resp, err := svc.ListStacks(listParams)
-  if err != nil { return err }
-
-  for _, value := range resp.StackSummaries {
-    var stacksResp *cloudformation.DescribeStacksOutput
-    getter := func() {
-      stacksResp, err = svc.DescribeStacks(&cloudformation.DescribeStacksInput{
-        StackName: value.StackName,
-      })
+    listParams := &cloudformation.ListStacksInput{
+      StackStatusFilter: []*string{
+        aws.String("CREATE_COMPLETE"),
+        aws.String("CREATE_IN_PROGRESS"),
+      },
     }
-    getter()
-    if err != nil {
-      if strings.HasPrefix(err.Error(), "Throttling: Rate exceeded") {
-        getter()
-      } else if strings.HasPrefix(err.Error(), "AccessDenied") {
-        continue
+
+    o, err := throttleProtected(
+      func() (interface{}, error) {
+        return svc.ListStacks(listParams)
+      },
+    )
+    if err != nil { return err }
+    resp := o.(*cloudformation.ListStacksOutput)
+
+    for _, value := range resp.StackSummaries {
+      o, err = throttleProtected(
+        func() (interface{}, error) {
+          return svc.DescribeStacks(&cloudformation.DescribeStacksInput{
+            StackName: value.StackName,
+          })
+        },
+      )
+      if err == nil {
+        stacksResp := o.(*cloudformation.DescribeStacksOutput)
+        if len(stacksResp.Stacks) > 0 {
+          fn(stacksResp.Stacks[0])
+          allStacks = append(allStacks, stacksResp.Stacks[0])
+        }
       } else {
-        return err
+        fmt.Println("Error: " + err.Error())
       }
     }
-    if len(stacksResp.Stacks) > 0 {
-      fn(stacksResp.Stacks[0])
+    return err
+  } else {
+    for _, stack := range allStacks {
+      fn(stack)
+    }
+    return nil
+  }
+}
+
+func canThrottleRetry(err error) bool {
+  if ae, ok := err.(awserr.RequestFailure); ok {
+    switch ae.StatusCode() {
+    case 500, 503:
+      return true
+    case 400:
+      switch ae.Code() {
+        case "ProvisionedThroughputExceededException",
+        "ThrottlingException", "Throttling":
+        return true
+      }
     }
   }
-
-  return err
+  return false
 }
 
 func throttleProtected(fn func() (interface{}, error)) (interface{}, error) {
   throttleWait := time.Millisecond * 500
   o, err := fn()
   for err != nil {
-    if strings.HasPrefix(err.Error(), "Throttling: Rate exceeded") {
+    if canThrottleRetry(err) {
       time.Sleep(throttleWait)
-      // 500ms, 1s, 2s, 4s, 8s
+      // 500ms, 1s, 2s, 4s, 8s, 16s, 32s
       throttleWait = throttleWait * 2
-      if throttleWait > time.Second * 8 {
+      if throttleWait > time.Second * 32 {
         return nil, err
       }
       o, err = fn()
@@ -456,51 +546,64 @@ func throttleProtected(fn func() (interface{}, error)) (interface{}, error) {
 }
 
 func eachRunningStack(fn func(stack *cloudformation.Stack)) error {
-  svc, err := CloudFormation()
-  if err != nil { return err }
+  if len(allFlightStacks) == 0 {
+    svc, err := CloudFormation()
+    if err != nil { return err }
 
-  listParams := &cloudformation.ListStacksInput{
-    StackStatusFilter: []*string{
-      aws.String("CREATE_COMPLETE"),
-      aws.String("CREATE_IN_PROGRESS"),
-    },
-  }
+    listParams := &cloudformation.ListStacksInput{
+      StackStatusFilter: []*string{
+        aws.String("CREATE_COMPLETE"),
+        aws.String("CREATE_IN_PROGRESS"),
+      },
+    }
 
-  resp, err := svc.ListStacks(listParams)
-  if err != nil { return err }
+    o, err := throttleProtected(
+      func() (interface{}, error) {
+        return svc.ListStacks(listParams)
+      },
+    )
+    if err != nil { return err }
+    resp := o.(*cloudformation.ListStacksOutput)
 
-  for _, value := range resp.StackSummaries {
-    var stacksResp *cloudformation.DescribeStacksOutput
-    if strings.HasPrefix(*value.StackName, "flight-") {
-      getter := func() {
-        stacksResp, err = svc.DescribeStacks(&cloudformation.DescribeStacksInput{
-          StackName: value.StackName,
-        })
-      }
-      getter()
-      if err != nil {
-        if strings.HasPrefix(err.Error(), "Throttling: Rate exceeded") {
-          getter()
-        } else if strings.HasPrefix(err.Error(), "AccessDenied") {
-          continue
+    for _, value := range resp.StackSummaries {
+      if strings.HasPrefix(*value.StackName, "flight-") {
+        o, err = throttleProtected(
+          func() (interface{}, error) {
+            return svc.DescribeStacks(&cloudformation.DescribeStacksInput{
+              StackName: value.StackName,
+            })
+          },
+        )
+        if err == nil {
+          stacksResp := o.(*cloudformation.DescribeStacksOutput)
+          if len(stacksResp.Stacks) > 0 {
+            fn(stacksResp.Stacks[0])
+            allFlightStacks = append(allFlightStacks, stacksResp.Stacks[0])
+          }
         } else {
-          return err
+          fmt.Println("Error: " + err.Error())
         }
       }
-      if len(stacksResp.Stacks) > 0 {
-        fn(stacksResp.Stacks[0])
-      }
     }
+    return err
+  } else {
+    for _, stack := range allFlightStacks {
+      fn(stack)
+    }
+    return nil
   }
-
-  return err
 }
 
 func getEventQueueUrl(name string) (*string, error) {
   sqsSvc, err := SQS()
   if err != nil { return nil, err }
-  queueResp, err := sqsSvc.CreateQueue(&sqs.CreateQueueInput{QueueName: &name})
+  o, err := throttleProtected(
+    func() (interface{}, error) {
+      return sqsSvc.CreateQueue(&sqs.CreateQueueInput{QueueName: &name})
+    },
+  )
   if err != nil { return nil, err }
+  queueResp := o.(*sqs.CreateQueueOutput)
   return queueResp.QueueUrl, nil
 }
 
@@ -508,8 +611,13 @@ func getEventTopic(name string) (*string, error) {
   snsSvc, err := SNS()
   if err != nil { return nil, err }
 
-  topicResp, err := snsSvc.CreateTopic(&sns.CreateTopicInput{Name: &name})
+  o, err := throttleProtected(
+    func() (interface{}, error) {
+      return snsSvc.CreateTopic(&sns.CreateTopicInput{Name: &name})
+    },
+  )
   if err != nil { return nil, err }
+  topicResp := o.(*sns.CreateTopicOutput)
   return topicResp.TopicArn, nil
 }
 
@@ -525,15 +633,32 @@ func cleanupEventHandling(stackName string) error {
   qUrl, err := getEventQueueUrl(stackName)
   if err != nil { return err }
 
-  resp, err := snsSvc.ListSubscriptionsByTopic(&sns.ListSubscriptionsByTopicInput{TopicArn: tArn})
+  o, err := throttleProtected(
+    func() (interface{}, error) {
+      return snsSvc.ListSubscriptionsByTopic(&sns.ListSubscriptionsByTopicInput{TopicArn: tArn})
+    },
+  )
   if err != nil { return err }
+  resp := o.(*sns.ListSubscriptionsByTopicOutput)
 
   for _, sub := range resp.Subscriptions {
-    snsSvc.Unsubscribe(&sns.UnsubscribeInput{SubscriptionArn: sub.SubscriptionArn})
+    throttleProtected(
+      func() (interface{}, error) {
+        return snsSvc.Unsubscribe(&sns.UnsubscribeInput{SubscriptionArn: sub.SubscriptionArn})
+      },
+    )
   }
 
-  snsSvc.DeleteTopic(&sns.DeleteTopicInput{TopicArn: tArn})
-  sqsSvc.DeleteQueue(&sqs.DeleteQueueInput{QueueUrl: qUrl})
+  throttleProtected(
+    func() (interface{}, error) {
+      return snsSvc.DeleteTopic(&sns.DeleteTopicInput{TopicArn: tArn})
+    },
+  )
+  throttleProtected(
+    func() (interface{}, error) {
+      return sqsSvc.DeleteQueue(&sqs.DeleteQueueInput{QueueUrl: qUrl})
+    },
+  )
   return nil
 }
 
@@ -548,11 +673,19 @@ func setupEventHandling(stackName string) (*string, *string, error) {
   cleanUp := func() {
     // clean up topic
     if tArn != nil {
-      snsSvc.DeleteTopic(&sns.DeleteTopicInput{TopicArn: tArn})
+      throttleProtected(
+        func() (interface{}, error) {
+          return snsSvc.DeleteTopic(&sns.DeleteTopicInput{TopicArn: tArn})
+        },
+      )
     }
     // clean up queue
     if qUrl != nil {
-      sqsSvc.DeleteQueue(&sqs.DeleteQueueInput{QueueUrl: qUrl})
+      throttleProtected(
+        func() (interface{}, error) {
+          return sqsSvc.DeleteQueue(&sqs.DeleteQueueInput{QueueUrl: qUrl})
+        },
+      )
     }
   }
 
@@ -561,20 +694,33 @@ func setupEventHandling(stackName string) (*string, *string, error) {
   qUrl, err = getEventQueueUrl(stackName)
   if err != nil { cleanUp(); return nil, nil, err }
 
-  attrsResp, err := sqsSvc.GetQueueAttributes(&sqs.GetQueueAttributesInput{
-    AttributeNames: []*string{aws.String("QueueArn")},
-    QueueUrl: qUrl,
-  })
+  o, err := throttleProtected(
+    func() (interface{}, error) {
+      return sqsSvc.GetQueueAttributes(&sqs.GetQueueAttributesInput{
+        AttributeNames: []*string{aws.String("QueueArn")},
+        QueueUrl: qUrl,
+      })
+    },
+  )
   if err != nil { cleanUp(); return nil, nil, err }
+  attrsResp := o.(*sqs.GetQueueAttributesOutput)
   qArn := attrsResp.Attributes["QueueArn"]
   
-  _, err = sqsSvc.SetQueueAttributes(&sqs.SetQueueAttributesInput{
-    Attributes: map[string]*string{"Policy": aws.String(fmt.Sprintf(sqsPolicyTemplate, *qArn, *qArn, *tArn))},
-    QueueUrl: qUrl,
-  })
+  _, err = throttleProtected(
+    func() (interface{}, error) {
+      return sqsSvc.SetQueueAttributes(&sqs.SetQueueAttributesInput{
+        Attributes: map[string]*string{"Policy": aws.String(fmt.Sprintf(sqsPolicyTemplate, *qArn, *qArn, *tArn))},
+        QueueUrl: qUrl,
+      })
+    },
+  )
   if err != nil { cleanUp(); return nil, nil, err }
   
-  _, err = snsSvc.Subscribe(&sns.SubscribeInput{Endpoint: qArn, Protocol: aws.String("sqs"), TopicArn: tArn})
+  _, err = throttleProtected(
+    func() (interface{}, error) {
+      return snsSvc.Subscribe(&sns.SubscribeInput{Endpoint: qArn, Protocol: aws.String("sqs"), TopicArn: tArn})
+    },
+  )
   if err != nil { cleanUp(); return nil, nil, err }
 
   return tArn, qUrl, nil
@@ -586,7 +732,11 @@ func receiveMessage(qUrl *string, handler func(msg string)) {
     fmt.Println("Error: " + err.Error())
     return
   }
-  resp, err := svc.ReceiveMessage(&sqs.ReceiveMessageInput{QueueUrl: qUrl, MaxNumberOfMessages: aws.Int64(10)})
+  o, err := throttleProtected(
+    func() (interface{}, error) {
+      return svc.ReceiveMessage(&sqs.ReceiveMessageInput{QueueUrl: qUrl, MaxNumberOfMessages: aws.Int64(10)})
+    },
+  )
   if err != nil {
     if aerr, ok := err.(awserr.Error); ok {
       switch aerr.Code() {
@@ -599,6 +749,7 @@ func receiveMessage(qUrl *string, handler func(msg string)) {
       }
     }
   }
+  resp := o.(*sqs.ReceiveMessageOutput)
   for _, message := range resp.Messages {
     var data NotificationMessage
     err = json.Unmarshal([]byte(*message.Body), &data)
@@ -629,7 +780,11 @@ func receiveMessage(qUrl *string, handler func(msg string)) {
         }
       }
     }
-    _, err = svc.DeleteMessage(&sqs.DeleteMessageInput{QueueUrl: qUrl, ReceiptHandle: message.ReceiptHandle})
+    _, err := throttleProtected(
+      func() (interface{}, error) {
+        return svc.DeleteMessage(&sqs.DeleteMessageInput{QueueUrl: qUrl, ReceiptHandle: message.ReceiptHandle})
+      },
+    )
     if err != nil {
       fmt.Println("Error: " + err.Error())
     }
@@ -653,30 +808,45 @@ func describeVPNConnection(connectionId string) (*string, error) {
   svc, err := EC2()
   if err != nil { return nil, err }
   // list NICs for subnet
-  resp, err := svc.DescribeVpnConnections(&ec2.DescribeVpnConnectionsInput{
-    VpnConnectionIds: []*string{aws.String(connectionId)},
-  })
+  o, err := throttleProtected(
+    func() (interface{}, error) {
+      return svc.DescribeVpnConnections(&ec2.DescribeVpnConnectionsInput{
+        VpnConnectionIds: []*string{aws.String(connectionId)},
+      })
+    },
+  )
   if err != nil { return nil, err }
+  resp := o.(*ec2.DescribeVpnConnectionsOutput)
   return resp.VpnConnections[0].CustomerGatewayConfiguration, nil
 }
 
 func describeAutoscalingGroup(name string) (*autoscaling.Group, error) {
   svc, err := AutoScaling()
   if err != nil { return nil, err }
-  resp, err := svc.DescribeAutoScalingGroups(&autoscaling.DescribeAutoScalingGroupsInput{
-    AutoScalingGroupNames: []*string{aws.String(name)},
-  })
+  o, err := throttleProtected(
+    func() (interface{}, error) {
+      return svc.DescribeAutoScalingGroups(&autoscaling.DescribeAutoScalingGroupsInput{
+        AutoScalingGroupNames: []*string{aws.String(name)},
+      })
+    },
+  )
   if err != nil { return nil, err }
+  resp := o.(*autoscaling.DescribeAutoScalingGroupsOutput)
   return resp.AutoScalingGroups[0], nil
 }
 
 func getStackResources(stack *cloudformation.Stack) ([]*cloudformation.StackResourceSummary, error) {
   svc, err := CloudFormation()
   if err != nil { return nil, err }
-  resp, err := svc.ListStackResources(&cloudformation.ListStackResourcesInput{
-    StackName: stack.StackName,
-  })
+  o, err := throttleProtected(
+    func() (interface{}, error) {
+      return svc.ListStackResources(&cloudformation.ListStackResourcesInput{
+        StackName: stack.StackName,
+      })
+    },
+  )
   if err != nil { return nil, err }
+  resp := o.(*cloudformation.ListStackResourcesOutput)
   return resp.StackResourceSummaries, nil
 }
 
@@ -699,7 +869,11 @@ func PreflightCheck() error {
   }
   svc, err := CloudFormation()
   if err != nil { return err }
-  _, err = svc.DescribeAccountLimits(&cloudformation.DescribeAccountLimitsInput{})
+  _, err = throttleProtected(
+    func() (interface{}, error) {
+      return svc.DescribeAccountLimits(&cloudformation.DescribeAccountLimitsInput{})
+    },
+  )
   if err != nil {
     if aerr, ok := err.(awserr.Error); ok {
       switch aerr.Code() {
@@ -726,4 +900,43 @@ func ExpiredStacks() ([]*cloudformation.Stack, error) {
     }
   })
   return expiredStacks, err
+}
+
+func createDomain(d *Domain, stackName, prefix string, tArn *string, launchParams []*cloudformation.Parameter) error {
+  svc, err := CloudFormation()
+  if err != nil { return err }
+
+  params := &cloudformation.CreateStackInput{
+    StackName: aws.String(stackName),
+    TemplateURL: aws.String(TemplateUrl("domain.json")),
+    NotificationARNs: []*string{tArn},
+    Tags: []*cloudformation.Tag{
+      {
+        Key: aws.String("flight:domain"),
+        Value: aws.String(d.Name),
+      },
+      {
+        Key: aws.String("flight:prefix"),
+        Value: aws.String(prefix),
+      },
+      {
+        Key: aws.String("flight:type"),
+        Value: aws.String("domain"),
+      },
+    },
+    Parameters: launchParams,
+  }
+
+  _, err = throttleProtected(
+    func() (interface{}, error) {
+      return svc.CreateStack(params)
+    },
+  )
+  if err != nil {
+    cleanupEventHandling(stackName)
+    return err
+  }
+  stack, err := awaitStack(svc, stackName)
+  d.Stack = stack
+  return err
 }
