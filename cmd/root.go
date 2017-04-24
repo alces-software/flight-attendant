@@ -127,8 +127,9 @@ func initConfig() {
   }
 
   // If a config file is found, read it in.
-  if err := viper.ReadInConfig(); err == nil {
-    //fmt.Println("Using config file:", viper.ConfigFileUsed())
+  if err := viper.ReadInConfig(); err != nil {
+    fmt.Println(err.Error())
+    os.Exit(1)
   }
 
   cfg := attendant.Config()
