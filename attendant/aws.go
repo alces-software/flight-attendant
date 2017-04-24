@@ -136,8 +136,8 @@ func IsValidKeyPairName(name string) bool {
       })
     },
   )
+  if err != nil { return false }
   resp := o.(*ec2.DescribeKeyPairsOutput)
-  if err != nil { return false}
   if len(resp.KeyPairs) == 0 { return false }
   return true
 }
