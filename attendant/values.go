@@ -150,7 +150,7 @@ var ClusterComputeParameters = map[string]string {
   "AccessUsername": "%ADMIN_USER_NAME%",
 
   "SchedulerType": "%SCHEDULER_TYPE%",
-  "FeatureProfileSet": "%FEATURE_PROFILE_SET",
+  "FeatureProfileSet": "%FEATURE_PROFILE_SET%",
   "FlightFeatures": "%COMPUTE_FEATURES%",
   "FlightProfileBucket": "%PROFILE_BUCKET%",
   "FlightProfiles": "%COMPUTE_PROFILES%",
@@ -198,7 +198,7 @@ var ClusterMasterParameters = map[string]string {
 
   "SchedulerType": "%SCHEDULER_TYPE%",
   "PreloadSoftware": "%PRELOAD_SOFTWARE%",
-  "FeatureProfileSet": "%FEATURE_PROFILE_SET",
+  "FeatureProfileSet": "%FEATURE_PROFILE_SET%",
   "FlightFeatures": "%MASTER_FEATURES%",
   "FlightProfileBucket": "%PROFILE_BUCKET%",
   "FlightProfiles": "%MASTER_PROFILES%",
@@ -237,7 +237,7 @@ var DomainApplianceParameters = map[string]string {
 
   "FlightProfileBucket": "%PROFILE_BUCKET%",
   "FlightProfiles": "%APPLIANCE_PROFILES%",
-  "FeatureProfileSet": "%FEATURE_PROFILE_SET",
+  "FeatureProfileSet": "%FEATURE_PROFILE_SET%",
 
   "ApplianceInstanceType": "%APPLIANCE_INSTANCE_TYPE%",
 
@@ -253,7 +253,7 @@ var SiloParameters = map[string]string {
 
   "FlightProfileBucket": "%PROFILE_BUCKET%",
   "FlightProfiles": "%APPLIANCE_PROFILES%",
-  "FeatureProfileSet": "%FEATURE_PROFILE_SET",
+  "FeatureProfileSet": "%FEATURE_PROFILE_SET%",
   "FlightFeatures": "",
 
   "OSSInstanceType": "%OSS_INSTANCE_TYPE%",
@@ -277,7 +277,7 @@ var BasicApplianceParameters = map[string]string {
   "AccessUsername": "%ADMIN_USER_NAME%",
   "AccessNetwork": "%ACCESS_NETWORK%",
 
-  "FeatureProfileSet": "%FEATURE_PROFILE_SET",
+  "FeatureProfileSet": "%FEATURE_PROFILE_SET%",
   "FlightFeatures": "%APPLIANCE_FEATURES%",
   "FlightProfileBucket": "%PROFILE_BUCKET%",
   "FlightProfiles": "%APPLIANCE_PROFILES%",
@@ -298,7 +298,7 @@ var SoloParameters = map[string]string {
 
   "SchedulerType": "%SCHEDULER_TYPE%",
   "PreloadSoftware": "%PRELOAD_SOFTWARE%",
-  "FeatureProfileSet": "%FEATURE_PROFILE_SET",
+  "FeatureProfileSet": "%FEATURE_PROFILE_SET%",
   "FlightFeatures": "%MASTER_FEATURES%",
   "FlightProfileBucket": "%PROFILE_BUCKET%",
   "FlightProfiles": "%MASTER_PROFILES%",
