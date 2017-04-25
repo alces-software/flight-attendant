@@ -49,6 +49,7 @@ var ConfigDefaults = map[string]string {
   "access-network": "0.0.0.0/0",
   "scheduler-type": "gridscheduler",
   "profile-bucket": "",
+  "feature-profile-set": "",
 
   "appliance-instance-type": "",
 
