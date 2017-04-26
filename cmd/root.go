@@ -128,8 +128,10 @@ func initConfig() {
 
   // If a config file is found, read it in.
   if err := viper.ReadInConfig(); err != nil {
-    fmt.Println(err.Error())
-    os.Exit(1)
+    if ! strings.HasPrefix(err.Error(), "Config File \".fly\" Not Found in ") {
+      fmt.Println(err.Error())
+      os.Exit(1)
+    }
   }
 
   cfg := attendant.Config()
