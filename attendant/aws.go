@@ -394,7 +394,7 @@ func eachStackConfigValue(stack *cloudformation.Stack, processor func(string, st
     configData := strings.Split(strings.Split(configResult, "\"")[3],";")
     for _, configDatum := range configData {
       configTuple := strings.Split(configDatum, ":")
-      if len(configTuple) == 1 {
+      if len(configTuple) == 1 || len(configTuple) > 2 {
         configTuple = strings.Split(configDatum, "=")
       }
       if len(configTuple) == 1 {
