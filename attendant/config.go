@@ -92,6 +92,7 @@ var ConfigDefaults = map[string]string {
   "compute-autoscaling-policy": "enabled",
   "compute-group-label": "",
   "compute-initial-nodes": "1",
+  "compute-max-nodes": "8",
   "compute-system-volume-type": "magnetic.standard",
 
   "swap-size": "0",

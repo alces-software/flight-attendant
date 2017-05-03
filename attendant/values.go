@@ -160,6 +160,7 @@ var ClusterComputeParameters = map[string]string {
   "ComputeSpotPrice": "%COMPUTE_SPOT_PRICE%",
   "AutoscalingPolicy": "%COMPUTE_AUTOSCALING_POLICY%",
   "ComputeInitialNodes": "%COMPUTE_INITIAL_NODES%",
+  "ComputeMaxNodes": "%COMPUTE_MAX_NODES%",
   "AutoscalingGroupLabel": "%COMPUTE_GROUP_LABEL%",
 
   "ComputeSystemVolumeType": "%COMPUTE_SYSTEM_VOLUME_TYPE%",
@@ -311,6 +312,7 @@ var SoloParameters = map[string]string {
   "ComputeSpotPrice": "%COMPUTE_SPOT_PRICE%",
   "AutoscalingPolicy": "%COMPUTE_AUTOSCALING_POLICY%",
   "ComputeInitialNodes": "%COMPUTE_INITIAL_NODES%",
+  "ComputeMaxNodes": "%COMPUTE_MAX_NODES%",
 
   "VolumeLayout": "%MASTER_VOLUME_LAYOUT%",
   "VolumeEncryptionPolicy": "%MASTER_VOLUME_ENCRYPTION_POLICY%",
