@@ -31,6 +31,7 @@ package cmd
 import (
   "fmt"
   "strings"
+  "time"
 
   "github.com/spf13/cobra"
   
@@ -109,5 +110,8 @@ func showGroupDetails(group *attendant.ComputeGroup) {
   fmt.Printf("    Capacity: %d-%d\n", group.MinSize(), group.MaxSize())
   fmt.Printf("     Running: %d\n", group.Running())
   fmt.Printf("     Pending: %d\n", group.DesiredCapacity() - group.Running())
+  if group.ExpiryTime > 0 {
+    fmt.Printf("      Expiry: %s\n", time.Unix(group.ExpiryTime, 0).Format(time.RFC3339))
+  }
   // fmt.Printf("    Resource: %s\n", group.ResourceName)
 }

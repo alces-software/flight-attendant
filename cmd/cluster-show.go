@@ -53,22 +53,45 @@ var clusterShowCmd = &cobra.Command{
     var err error
 
     if err := attendant.PreflightCheck(); err != nil { return err }
-    domain, err = findDomain("clusterShow", false)
-    if err != nil { return err }
-
-    cluster := attendant.NewCluster(args[0], domain, nil)
-    var exists bool
-    attendant.SpinWithSuffix(func() { exists = cluster.Exists() }, attendant.Config().AwsRegion + ": " + cluster.Domain.Name + "/" + cluster.Name)
-    if exists {
-      fmt.Println(cluster.Name)
-      fmt.Println(strings.Repeat("-", len(cluster.Name)))
-
+    solo, _ := cmd.Flags().GetBool("solo")
+    if solo {
+      var status *attendant.DomainStatus
       var details string
-      attendant.SpinWithSuffix(func() { details = cluster.GetDetails() }, attendant.Config().AwsRegion + ": " + cluster.Domain.Name + "/" + cluster.Name)
-      fmt.Println(details)
-      return nil
+      attendant.SpinWithSuffix(func() { status, err = attendant.SoloStatus() }, attendant.Config().AwsRegion + " (Solo)")
+      found := false
+      for _, cluster := range status.Clusters {
+        if cluster.Name == args[0] {
+          attendant.SpinWithSuffix(func() { details = cluster.GetDetails() }, attendant.Config().AwsRegion + ": " + args[0])
+          fmt.Println(cluster.Name)
+          fmt.Println(strings.Repeat("-", len(cluster.Name)))
+          fmt.Println(details)
+          found = true
+          break
+        }
+      }
+      if !found {
+        return fmt.Errorf("Solo cluster not found: %s (%s)", args[0], attendant.Config().AwsRegion)
+      } else {
+        return nil
+      }
     } else {
-      return fmt.Errorf("Cluster not found: %s/%s (%s)", cluster.Domain.Name, cluster.Name, attendant.Config().AwsRegion)
+      domain, err = findDomain("clusterShow", false)
+      if err != nil { return err }
+
+      cluster := attendant.NewCluster(args[0], domain, nil)
+      var exists bool
+      attendant.SpinWithSuffix(func() { exists = cluster.Exists() }, attendant.Config().AwsRegion + ": " + cluster.Domain.Name + "/" + cluster.Name)
+      if exists {
+        fmt.Println(cluster.Name)
+        fmt.Println(strings.Repeat("-", len(cluster.Name)))
+
+        var details string
+        attendant.SpinWithSuffix(func() { details = cluster.GetDetails() }, attendant.Config().AwsRegion + ": " + cluster.Domain.Name + "/" + cluster.Name)
+        fmt.Println(details)
+        return nil
+      } else {
+        return fmt.Errorf("Cluster not found: %s/%s (%s)", cluster.Domain.Name, cluster.Name, attendant.Config().AwsRegion)
+      }
     }
   },
 }
@@ -76,5 +99,6 @@ var clusterShowCmd = &cobra.Command{
 func init() {
   clusterCmd.AddCommand(clusterShowCmd)
   addDomainFlag(clusterShowCmd, "clusterShow")
+  clusterShowCmd.Flags().BoolP("solo", "s", false, "Show Flight Compute Solo cluster")
 }
 

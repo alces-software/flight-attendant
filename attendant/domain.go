@@ -163,7 +163,7 @@ func SoloStatus() (*DomainStatus, error) {
     stackType := getStackTag(stack, "flight:type")
     if stackType == "solo" {
       clusterName := getStackTag(stack, "flight:cluster")
-      cluster := &Cluster{Name: clusterName, Master: &Master{stack}}
+      cluster := &Cluster{Name: clusterName, Master: &Master{stack}, ExpiryTime: -1}
       soloStatus.Clusters[clusterName] = cluster
     }
   })
@@ -204,7 +204,7 @@ func (d *Domain) Status() (*DomainStatus, error) {
           clusterName := getStackTag(stack, "flight:cluster")
           cluster, exists := status.Clusters[clusterName]
           if ! exists {
-            cluster = &Cluster{Name: clusterName, Domain: d}
+            cluster = &Cluster{Name: clusterName, Domain: d, ExpiryTime: -1}
             status.Clusters[clusterName] = cluster
           }
           if stackType == "master" {
@@ -273,10 +273,8 @@ func (d *Domain) AssertExists() error {
   }
   svc, err := CloudFormation()
   if err != nil { return err }
+  stack, err := getStack(svc, "flight-" + d.Name)
 
-  stacksResp, err := svc.DescribeStacks(&cloudformation.DescribeStacksInput{
-    StackName: aws.String("flight-" + d.Name),
-  })
   if err != nil {
     if aerr, ok := err.(awserr.Error); ok {
       switch aerr.Code() {
@@ -286,7 +284,6 @@ func (d *Domain) AssertExists() error {
     }
     return err
   }
-  stack := stacksResp.Stacks[0]
   for _, tag := range stack.Tags {
     if *tag.Key == "flight:type" && *tag.Value == "domain" {
       d.Stack = stack
@@ -315,46 +312,17 @@ func (d *Domain) Create(prefix string, domainParamsFile string) error {
 
   d.MessageHandler(fmt.Sprintf("COUNTERS=%d",resourceCountFor(defaultLaunchParams)))
 
-  svc, err := CloudFormation()
-  if err != nil { return err }
-
   stackName := "flight-" + d.Name
   tArn, qUrl, err := setupEventHandling(stackName)
   if err != nil { return err }
   go d.processQueue(qUrl)
 
-  params := &cloudformation.CreateStackInput{
-    StackName: aws.String(stackName),
-    TemplateURL: aws.String(TemplateUrl("domain.json")),
-    NotificationARNs: []*string{tArn},
-    Tags: []*cloudformation.Tag{
-      {
-        Key: aws.String("flight:domain"),
-        Value: aws.String(d.Name),
-      },
-      {
-        Key: aws.String("flight:prefix"),
-        Value: aws.String(prefix),
-      },
-      {
-        Key: aws.String("flight:type"),
-        Value: aws.String("domain"),
-      },
-    },
-    Parameters: createDomainLaunchParameters(d, defaultLaunchParams),
-  }
-
-  _, err = svc.CreateStack(params)
+  launchParams := createDomainLaunchParameters(d, defaultLaunchParams)
+  err = createDomain(d, stackName, prefix, tArn, launchParams)
   if err != nil {
     cleanupEventHandling(stackName)
     return err
   }
-  stack, err := awaitStack(svc, stackName)
-  if err != nil {
-    cleanupEventHandling(stackName)
-    return err
-  }
-  d.Stack = stack
   err = d.SaveEntity()
 
   d.MessageHandler("DONE")

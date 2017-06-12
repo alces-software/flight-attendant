@@ -58,6 +58,13 @@ var MasterInstanceTypes = []string{
   "enterprise-x1.32xlarge",
 }
 
+var KnownConfigValues = []string{
+  "UUID",
+  "Token",
+  "VPN Access",
+  "SSH Access",
+}
+
 func IsValidMasterInstanceType(instanceType string) bool {
   return containsS(MasterInstanceTypes, instanceType)
 }
@@ -89,6 +96,7 @@ var ComputeInstanceTypes = []string{
 // compute: 10 (9)
 var ClusterResourceCount int = 35
 var SoloClusterResourceCount int = 46
+var SoloLegacyClusterResourceCount int = 48
 var ComputeGroupResourceCount int = 10
 
 func IsValidComputeInstanceType(instanceType string) bool {
@@ -103,6 +111,8 @@ type Cluster struct {
   ComputeGroups []*ComputeGroup
   TopicARN string
   MessageHandler func(msg string)
+  ExpiryTime int64
+  SoloMode string
 }
 
 type ClusterDetails struct {
@@ -114,6 +124,10 @@ type ClusterDetails struct {
   Token string
   Queues []QueueDetails
   Components []string
+  ExpiryTime int64
+  VPNAccess string
+  SSHAccess string
+  ConfigValues map[string]string
 }
 
 type QueueDetails struct {
@@ -125,6 +139,7 @@ type QueueDetails struct {
   MinSize int
   DesiredCapacity int
   Running int
+  ExpiryTime int64
 }
 
 type ClusterNetwork struct {
@@ -176,6 +191,10 @@ func (m *Master) PrivateIP() string {
   return getStackOutput(m.Stack, "MasterPrivateIP")
 }
 
+func (m *Master) SSHProxy() string {
+  return getStackConfigValue(m.Stack, "SSH Access")
+}
+
 func (m *Master) Username() string {
   return getStackOutput(m.Stack, "Username")
 }
@@ -199,16 +218,19 @@ type ComputeGroup struct {
   Pricing string
   ResourceName string
   _AutoscalingGroup *autoscaling.Group
+  ExpiryTime int64
 }
 
 func NewCluster(name string, domain *Domain, handler func(msg string)) *Cluster {
-  return &Cluster{name, domain, nil, nil, nil, "", handler}
+  return &Cluster{name, domain, nil, nil, nil, "", handler, -1, ""}
 }
 
 func (c *Cluster) processQueue(qArn *string) {
   for c.MessageHandler != nil {
     time.Sleep(500 * time.Millisecond)
-    receiveMessage(qArn, c.MessageHandler)
+    if c.MessageHandler != nil {
+      receiveMessage(qArn, c.MessageHandler)
+    }
   }
 }
 
@@ -249,13 +271,13 @@ func (c *Cluster) Create(withQ bool) error {
   c.MessageHandler("DONE")
 
   if withQ {
-    err = c.AddQueue("default", "")
+    err = c.AddQueue("default", "", 0)
     if err != nil { return err }
   }
   return nil
 }
 
-func (c *Cluster) AddQueue(queueName, queueParamsFile string) error {
+func (c *Cluster) AddQueue(queueName, queueParamsFile string, expiryTime int64) error {
   svc, err := CloudFormation()
   if err != nil { return err }
 
@@ -275,7 +297,7 @@ func (c *Cluster) AddQueue(queueName, queueParamsFile string) error {
   c.TopicARN = *tArn
 
   // create compute group(s)
-  err = createComputeGroup(c, queueName, queueParamsFile, svc)
+  err = createComputeGroup(c, queueName, queueParamsFile, expiryTime, svc)
   if err != nil { return err }
   c.MessageHandler("DONE")
   return nil
@@ -504,7 +526,8 @@ func computeGroupFromStack(stack *cloudformation.Stack) *ComputeGroup {
   if autoscalingResource != nil {
     resourceName = *autoscalingResource.PhysicalResourceId
   }
-  return &ComputeGroup{stack,queueName,instanceType,pricing,resourceName,nil}
+  expiryTime, _ := strconv.ParseInt(getStackTag(stack, "flight:expiry"), 10, 64)
+  return &ComputeGroup{stack,queueName,instanceType,pricing,resourceName,nil,expiryTime}
 }
 
 func (c *Cluster) Details() *ClusterDetails {
@@ -533,6 +556,17 @@ func (c *Cluster) Details() *ClusterDetails {
     if details.Uuid == "" { details.Uuid = "<unknown>" }
     details.Token = getStackConfigValue(c.Master.Stack, "Token")
     if details.Token == "" { details.Token = "<unknown>" }
+    details.VPNAccess = getStackConfigValue(c.Master.Stack, "VPN Access")
+    details.SSHAccess = getStackConfigValue(c.Master.Stack, "SSH Access")
+    details.ExpiryTime, _ = strconv.ParseInt(getStackTag(c.Master.Stack, "flight:expiry"), 10, 64)
+    // add other stack config values
+    details.ConfigValues = make(map[string]string)
+    eachStackConfigValue(c.Master.Stack, func(key string, val string) {
+      if ! containsS(KnownConfigValues, key) {
+        details.ConfigValues[key] = val
+      }
+    })
+
     if (len(c.ComputeGroups) > 0) {
       details.Queues = []QueueDetails{}
       for _, group := range c.ComputeGroups {
@@ -547,6 +581,7 @@ func (c *Cluster) Details() *ClusterDetails {
   }
   return &details
 }
+
 
 func (c *Cluster) GetDetails() string {
   if c.Master == nil {
@@ -567,22 +602,50 @@ func (c *Cluster) GetDetails() string {
     if url == "" {
       url = getStackOutput(c.Master.Stack, "PrivateWebAccess")
     }
+    details := fmt.Sprintf("Administrator username: %s\nIP address: %s\nKey pair: %s\n", username, ip, keypair)
+    if url != "" {
+      details += "Access URL: " + url + "\n"
+    }
+
+    vpnAccess := getStackConfigValue(c.Master.Stack, "VPN Access")
+    sshAccess := getStackConfigValue(c.Master.Stack, "SSH Access")
+    if vpnAccess != "" {
+      details += fmt.Sprintf("VPN proxy: %s\n", vpnAccess)
+    }
+    if sshAccess != "" {
+      details += fmt.Sprintf("SSH proxy: %s\n", sshAccess)
+    }
+    // add other stack config values
+    eachStackConfigValue(c.Master.Stack, func(key string, val string) {
+      if ! containsS(KnownConfigValues, key) {
+        details += fmt.Sprintf("%s: %s\n", key, val)
+      }
+    })
+
     c.LoadComputeGroups()
     componentStacks, _ := getComponentStacksForCluster(c)
     uuid := getStackConfigValue(c.Master.Stack, "UUID")
     if uuid == "" { uuid = "<unknown>" }
     token := getStackConfigValue(c.Master.Stack, "Token")
     if token == "" { token = "<unknown>" }
-    details := fmt.Sprintf("Administrator username: %s\nIP address: %s\nKey pair: %s", username, ip, keypair)
-    if url != "" {
-      details += "\nAccess URL: " + url
+
+    details += fmt.Sprintf("UUID: %s\nToken: %s\n", uuid, token)
+    expiryTime := c.GetExpiryTime()
+    if expiryTime > 0 {
+      details += fmt.Sprintf("Expiry: %s\n", time.Unix(expiryTime, 0).Format(time.RFC3339))
     }
-    details += fmt.Sprintf("\nUUID: %s\nToken: %s\n", uuid, token)
+    details += fmt.Sprintf("Creation: %s\n", c.Master.Stack.CreationTime.Local().Format(time.RFC3339))
     if (len(c.ComputeGroups) > 0) {
       details += "\nQueues: "
       queueDetails := []string{}
       for _, group := range c.ComputeGroups {
-        queueDetails = append(queueDetails, fmt.Sprintf("%s (%s, %s)", group.Name, group.InstanceType, group.Pricing))
+        var queueDetail string
+        if group.ExpiryTime > 0 {
+          queueDetail = fmt.Sprintf("(%s, %s, expiry: %s)", group.InstanceType, group.Pricing, time.Unix(group.ExpiryTime, 0).Format(time.RFC3339))
+        } else {
+          queueDetail = fmt.Sprintf("(%s, %s)", group.InstanceType, group.Pricing)
+        }
+        queueDetails = append(queueDetails, group.Name + " " + queueDetail)
       }
       details += strings.Join(queueDetails, ", ") + "\n"
     }
@@ -600,6 +663,22 @@ func (c *Cluster) GetDetails() string {
   }
 }
 
+func (c *Cluster) GetExpiryTime() int64 {
+  if c.ExpiryTime == -1 {
+    if c.Master == nil {
+      if svc, err := CloudFormation(); err == nil {
+        if masterStack, err := getStack(svc, "flight-" + c.Domain.Name + "-" + c.Name + "-master"); err == nil {
+          c.Master = &Master{masterStack}
+        }
+      }
+    }
+    if c.Master != nil {
+      c.ExpiryTime, _ = strconv.ParseInt(getStackTag(c.Master.Stack, "flight:expiry"), 10, 64)
+    }
+  }
+  return c.ExpiryTime
+}
+
 func (g *ComputeGroup) loadAutoscalingGroup() {
   g._AutoscalingGroup, _ = describeAutoscalingGroup(g.ResourceName)
 }
@@ -610,6 +689,7 @@ func (g *ComputeGroup) Details() QueueDetails {
   details.InstanceType = g.InstanceType
   details.Pricing = g.Pricing
   details.ResourceName = g.ResourceName
+  details.ExpiryTime = g.ExpiryTime
   details.MaxSize = g.MaxSize()
   details.MinSize = g.MinSize()
   details.DesiredCapacity = g.DesiredCapacity()
@@ -700,7 +780,11 @@ func createMaster(cluster *Cluster, svc *cloudformation.CloudFormation) error {
   stackName := fmt.Sprintf("flight-%s-%s-master", cluster.Domain.Name, cluster.Name)
   url := TemplateUrl(clusterMasterTemplate)
 
-  stack, err := createStack(svc, launchParams, cluster.Tags(), url, stackName, "master", cluster.TopicARN, cluster.Domain)
+  tags := cluster.Tags()
+  if cluster.ExpiryTime > 0 {
+    tags = append(tags, &cloudformation.Tag{Key: aws.String("flight:expiry"), Value: aws.String(strconv.FormatInt(cluster.ExpiryTime, 10))})
+  }
+  stack, err := createStack(svc, launchParams, tags, url, stackName, "master", cluster.TopicARN, cluster.Domain)
   if err != nil { return err }
 
   cluster.Master = &Master{stack}
@@ -733,7 +817,7 @@ func loadParameterSet(componentName string, defaultParameterSet map[string]strin
   return defaultParameterSet
 }
 
-func createComputeGroup(cluster *Cluster, queueName, queueParamsFile string, svc *cloudformation.CloudFormation) error {
+func createComputeGroup(cluster *Cluster, queueName, queueParamsFile string, expiryTime int64, svc *cloudformation.CloudFormation) error {
   var defaultLaunchParams map[string]string
   if queueParamsFile == "" {
     defaultLaunchParams = loadParameterSet("cluster-compute", ClusterComputeParameters)
@@ -747,7 +831,11 @@ func createComputeGroup(cluster *Cluster, queueName, queueParamsFile string, svc
     queueName)
   url := TemplateUrl(clusterComputeTemplate)
 
-  stack, err := createStack(svc, launchParams, cluster.Tags(), url, stackName, "compute", cluster.TopicARN, cluster.Domain)
+  tags := cluster.Tags()
+  if expiryTime > 0 {
+    tags = append(tags, &cloudformation.Tag{Key: aws.String("flight:expiry"), Value: aws.String(strconv.FormatInt(expiryTime, 10))})
+  }
+  stack, err := createStack(svc, launchParams, tags, url, stackName, "compute", cluster.TopicARN, cluster.Domain)
   if err != nil { return err }
 
   cluster.ComputeGroups = append(cluster.ComputeGroups, computeGroupFromStack(stack))
@@ -776,12 +864,21 @@ func createClusterNetwork(cluster *Cluster, svc *cloudformation.CloudFormation) 
 }
 
 func createSoloCluster(cluster *Cluster, svc *cloudformation.CloudFormation) error {
-  launchParams := createClusterComponentLaunchParameters(cluster,
-    loadParameterSet("solo", SoloParameters))
+  var parameterSet map[string]string
+  if cluster.SoloMode == "legacy" {
+    parameterSet = loadParameterSet("solo-legacy", LegacySoloParameters)
+  } else {
+    parameterSet = loadParameterSet("solo", SoloParameters)
+  }
+  launchParams := createClusterComponentLaunchParameters(cluster, parameterSet)
   stackName := fmt.Sprintf("flight-cluster-%s", cluster.Name)
   url := TemplateUrl(soloClusterTemplate)
 
-  stack, err := createStack(svc, launchParams, cluster.Tags(), url, stackName, "solo", cluster.TopicARN, nil)
+  tags := cluster.Tags()
+  if cluster.ExpiryTime > 0 {
+    tags = append(tags, &cloudformation.Tag{Key: aws.String("flight:expiry"), Value: aws.String(strconv.FormatInt(cluster.ExpiryTime, 10))})
+  }
+  stack, err := createStack(svc, launchParams, tags, url, stackName, "solo", cluster.TopicARN, nil)
   if err != nil { return err }
 
   cluster.Master = &Master{stack}
@@ -885,4 +982,32 @@ func loadComponentParameters(paramsFile string) map[string]string {
     if err != nil { fmt.Println(err.Error()) }
   }
   return params
+}
+
+func ExpiredClusters() ([]string, error) {
+  stacks, err := ExpiredStacks()
+  names := []string{}
+  if err != nil { return nil, err }
+  for _, stack := range stacks {
+    var descriptor string
+    name := getStackTag(stack, "flight:cluster")
+    stackType := getStackTag(stack, "flight:type")
+    domain := getStackTag(stack, "flight:domain")
+    if stackType == "master" {
+      descriptor = fmt.Sprintf("CLUSTER:%s/%s", domain, name)
+    } else if stackType == "compute" {
+      var queueName string
+      queueNameParts := strings.SplitAfterN(*stack.StackName, "-compute-", 2)
+      if len(queueNameParts) > 1 {
+        queueName = queueNameParts[1]
+      } else {
+        queueName = queueNameParts[0]
+      }
+      descriptor = fmt.Sprintf("QUEUE:%s/%s/%s", domain, name, queueName)
+    } else {
+      descriptor = fmt.Sprintf("SOLO:%s", name)
+    }
+    names = append(names, descriptor)
+  }
+  return names, nil
 }

@@ -49,6 +49,8 @@ var ConfigDefaults = map[string]string {
   "access-network": "0.0.0.0/0",
   "scheduler-type": "gridscheduler",
   "profile-bucket": "",
+  "feature-profile-set": "",
+  "personality-data": "",
 
   "appliance-instance-type": "",
 
@@ -91,6 +93,7 @@ var ConfigDefaults = map[string]string {
   "compute-autoscaling-policy": "enabled",
   "compute-group-label": "",
   "compute-initial-nodes": "1",
+  "compute-max-nodes": "8",
   "compute-system-volume-type": "magnetic.standard",
 
   "swap-size": "0",

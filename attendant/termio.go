@@ -99,6 +99,7 @@ func createHandlerFunction(resourceTotal int, inProgressText, completeText, comp
     if loggingEnabled { log.Println(msg) }
     if msg == "DONE" {
       Spinner().Stop()
+      time.Sleep(250*time.Millisecond)
       for res, idx := range resRegistry {
         if ! completeRegistry[res] {
           lines := len(resRegistry) - idx
@@ -132,6 +133,7 @@ func createHandlerFunction(resourceTotal int, inProgressText, completeText, comp
     } else if state == inProgressText {
       if _, exists := resRegistry[res]; !exists {
         Spinner().Stop()
+        time.Sleep(250*time.Millisecond)
         fmt.Println("⏳  " + name)
         Spinner().Start()
         resRegistry[res] = len(resRegistry)
@@ -141,6 +143,10 @@ func createHandlerFunction(resourceTotal int, inProgressText, completeText, comp
         return
       } else {
         Spinner().Stop()
+        // attempt to stop gaps appearing, assuming that it's a race
+        // condition between the following Printf and the Spinner
+        // actually getting around to stopping.
+        time.Sleep(250*time.Millisecond)
         if _, exists := resRegistry[res]; !exists {
           fmt.Printf("%s  %s\n", completionRune, name)
           resRegistry[res] = len(resRegistry)
