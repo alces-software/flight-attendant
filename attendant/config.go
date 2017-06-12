@@ -50,6 +50,7 @@ var ConfigDefaults = map[string]string {
   "scheduler-type": "gridscheduler",
   "profile-bucket": "",
   "feature-profile-set": "",
+  "personality-data": "",
 
   "appliance-instance-type": "",
 

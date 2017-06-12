@@ -154,6 +154,7 @@ var ClusterComputeParameters = map[string]string {
   "FlightFeatures": "%COMPUTE_FEATURES%",
   "FlightProfileBucket": "%PROFILE_BUCKET%",
   "FlightProfiles": "%COMPUTE_PROFILES%",
+  "PersonalityData": "%PERSONALITY_DATA%",
 
   "ComputeInstanceType": "%COMPUTE_INSTANCE_TYPE%",
   "ComputeInstanceTypeOther": "%COMPUTE_INSTANCE_OVERRIDE%",
@@ -203,6 +204,7 @@ var ClusterMasterParameters = map[string]string {
   "FlightFeatures": "%MASTER_FEATURES%",
   "FlightProfileBucket": "%PROFILE_BUCKET%",
   "FlightProfiles": "%MASTER_PROFILES%",
+  "PersonalityData": "%PERSONALITY_DATA%",
 
   "MasterInstanceType": "%MASTER_INSTANCE_TYPE%",
   "MasterInstanceTypeOther": "%MASTER_INSTANCE_OVERRIDE%",
@@ -303,6 +305,7 @@ var SoloParameters = map[string]string {
   "FlightFeatures": "%MASTER_FEATURES%",
   "FlightProfileBucket": "%PROFILE_BUCKET%",
   "FlightProfiles": "%MASTER_PROFILES%",
+  "PersonalityData": "%PERSONALITY_DATA%",
 
   "MasterInstanceType": "%MASTER_INSTANCE_TYPE%",
   "MasterInstanceTypeOther": "%MASTER_INSTANCE_OVERRIDE%",
