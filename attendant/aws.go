@@ -30,6 +30,7 @@ package attendant
 
 import (
   "fmt"
+  "html"
   "regexp"
   "strconv"
   "strings"
@@ -391,6 +392,7 @@ func getStackOutput(stack *cloudformation.Stack, key string) string {
 func eachStackConfigValue(stack *cloudformation.Stack, processor func(string, string)) {
   configResult := getStackOutput(stack, "ConfigurationResult")
   if configResult != "" {
+    configResult = html.UnescapeString(configResult)
     configData := strings.Split(strings.Split(configResult, "\"")[3],";")
     for _, configDatum := range configData {
       configTuple := strings.Split(configDatum, ":")
@@ -410,6 +412,7 @@ func getStackConfigValue(stack *cloudformation.Stack, key string) string {
   var v string
   configResult := getStackOutput(stack, "ConfigurationResult")
   if configResult != "" {
+    configResult = html.UnescapeString(configResult)
     configData := strings.Split(strings.Split(configResult, "\"")[3],";")
     for _, configDatum := range configData {
       configTuple := strings.Split(configDatum, ":")
