@@ -112,6 +112,7 @@ type Cluster struct {
   TopicARN string
   MessageHandler func(msg string)
   ExpiryTime int64
+  Quota int64
   SoloMode string
 }
 
@@ -125,6 +126,7 @@ type ClusterDetails struct {
   Queues []QueueDetails
   Components []string
   ExpiryTime int64
+  Quota int64
   VPNAccess string
   SSHAccess string
   ConfigValues map[string]string
@@ -222,7 +224,7 @@ type ComputeGroup struct {
 }
 
 func NewCluster(name string, domain *Domain, handler func(msg string)) *Cluster {
-  return &Cluster{name, domain, nil, nil, nil, "", handler, -1, ""}
+  return &Cluster{name, domain, nil, nil, nil, "", handler, -1, -1, ""}
 }
 
 func (c *Cluster) processQueue(qArn *string) {
@@ -559,6 +561,7 @@ func (c *Cluster) Details() *ClusterDetails {
     details.VPNAccess = getStackConfigValue(c.Master.Stack, "VPN Access")
     details.SSHAccess = getStackConfigValue(c.Master.Stack, "SSH Access")
     details.ExpiryTime, _ = strconv.ParseInt(getStackTag(c.Master.Stack, "flight:expiry"), 10, 64)
+    details.Quota, _ = strconv.ParseInt(getStackTag(c.Master.Stack, "flight:quota"), 10, 64)
     // add other stack config values
     details.ConfigValues = make(map[string]string)
     eachStackConfigValue(c.Master.Stack, func(key string, val string) {
@@ -634,6 +637,10 @@ func (c *Cluster) GetDetails() string {
     if expiryTime > 0 {
       details += fmt.Sprintf("Expiry: %s\n", time.Unix(expiryTime, 0).Format(time.RFC3339))
     }
+    quota := c.GetQuota()
+    if quota > 0 {
+      details += fmt.Sprintf("Quota: %dcu/h\n", quota)
+    }
     details += fmt.Sprintf("Creation: %s\n", c.Master.Stack.CreationTime.Local().Format(time.RFC3339))
     if (len(c.ComputeGroups) > 0) {
       details += "\nQueues: "
@@ -677,6 +684,22 @@ func (c *Cluster) GetExpiryTime() int64 {
     }
   }
   return c.ExpiryTime
+}
+
+func (c *Cluster) GetQuota() int64 {
+  if c.Quota == -1 {
+    if c.Master == nil {
+      if svc, err := CloudFormation(); err == nil {
+        if masterStack, err := getStack(svc, "flight-" + c.Domain.Name + "-" + c.Name + "-master"); err == nil {
+          c.Master = &Master{masterStack}
+        }
+      }
+    }
+    if c.Master != nil {
+      c.Quota, _ = strconv.ParseInt(getStackTag(c.Master.Stack, "flight:quota"), 10, 64)
+    }
+  }
+  return c.Quota
 }
 
 func (g *ComputeGroup) loadAutoscalingGroup() {
@@ -784,6 +807,9 @@ func createMaster(cluster *Cluster, svc *cloudformation.CloudFormation) error {
   if cluster.ExpiryTime > 0 {
     tags = append(tags, &cloudformation.Tag{Key: aws.String("flight:expiry"), Value: aws.String(strconv.FormatInt(cluster.ExpiryTime, 10))})
   }
+  if cluster.Quota > 0 {
+    tags = append(tags, &cloudformation.Tag{Key: aws.String("flight:quota"), Value: aws.String(strconv.FormatInt(cluster.Quota, 10))})
+  }
   stack, err := createStack(svc, launchParams, tags, url, stackName, "master", cluster.TopicARN, cluster.Domain)
   if err != nil { return err }
 
@@ -877,6 +903,9 @@ func createSoloCluster(cluster *Cluster, svc *cloudformation.CloudFormation) err
   tags := cluster.Tags()
   if cluster.ExpiryTime > 0 {
     tags = append(tags, &cloudformation.Tag{Key: aws.String("flight:expiry"), Value: aws.String(strconv.FormatInt(cluster.ExpiryTime, 10))})
+  }
+  if cluster.Quota > 0 {
+    tags = append(tags, &cloudformation.Tag{Key: aws.String("flight:quota"), Value: aws.String(strconv.FormatInt(cluster.Quota, 10))})
   }
   stack, err := createStack(svc, launchParams, tags, url, stackName, "solo", cluster.TopicARN, nil)
   if err != nil { return err }

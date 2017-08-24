@@ -75,7 +75,9 @@ var clusterLaunchCmd = &cobra.Command{
       if err != nil { return err }
       expiryTime = time.Now().Add(duration).Unix()
     }
-    
+
+    quota, _ := cmd.Flags().GetInt64("quota")
+
     if err := attendant.PreflightCheck(); err != nil { return err }
     if err := setupTemplateSource("clusterLaunch"); err != nil { return err }
     if err := setupKeyPair("clusterLaunch"); err != nil { return err }
@@ -104,7 +106,7 @@ var clusterLaunchCmd = &cobra.Command{
 
       fmt.Printf("Launching cluster '%s' in domain '%s' (%s)...\n\n", args[0], domain.Name, attendant.Config().AwsRegion)
     }
-    cluster, err = launchCluster(domain, args[0], withQ, expiryTime, soloMode)
+    cluster, err = launchCluster(domain, args[0], withQ, expiryTime, quota, soloMode)
     if err != nil { return err }
 
     fmt.Println("\nCluster launched.\n")
@@ -130,6 +132,7 @@ func init() {
   clusterLaunchCmd.Flags().BoolP("solo", "s", false, "Launch a Flight Compute Solo cluster")
   clusterLaunchCmd.Flags().BoolP("solo-legacy", "l", false, "Launch a legacy Flight Compute Solo cluster")
   clusterLaunchCmd.Flags().IntP("runtime", "r", 0, "Maximum runtime for cluster (minutes)")
+  clusterLaunchCmd.Flags().Int64P("quota", "c", 0, "Maximum hourly quota for cluster (compute units)")
 
   clusterLaunchCmd.Flags().BoolP("with-queue", "q", false, "Launch with a compute queue")
   viper.BindPFlag("launch-with-default-queue", clusterLaunchCmd.Flags().Lookup("with-queue"))
@@ -145,7 +148,7 @@ func init() {
   addTemplateRootFlag(clusterLaunchCmd, "clusterLaunch")
 }
 
-func launchCluster(domain *attendant.Domain, name string, withQ bool, expiryTime int64, soloMode string) (*attendant.Cluster, error) {
+func launchCluster(domain *attendant.Domain, name string, withQ bool, expiryTime int64, quota int64, soloMode string) (*attendant.Cluster, error) {
   var count int
   if domain == nil {
     if soloMode == "legacy" {
@@ -164,6 +167,7 @@ func launchCluster(domain *attendant.Domain, name string, withQ bool, expiryTime
   cluster := attendant.NewCluster(name, domain, handler)
   cluster.SoloMode = soloMode
   cluster.ExpiryTime = expiryTime
+  cluster.Quota = quota
   attendant.Spin(func() { err = cluster.Create(withQ) })
   cluster.MessageHandler = nil
   return cluster, err
