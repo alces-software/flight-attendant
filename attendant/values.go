@@ -115,6 +115,7 @@ var SchedulerTypes = []string {
   "pbspro",
   "slurm",
   "torque",
+  "-none-",
 }
 
 var AwsRegions = []string {
