@@ -143,6 +143,7 @@ var DomainParameters = map[string]string {
   "AllowInternetAccess": "%ALLOW_INTERNET_ACCESS%",
   "VPNCustomerGateway": "%VPN_CUSTOMER_GATEWAY%",
   "DomainNetworkPrefix": "%DOMAIN_NETWORK_PREFIX%",
+  "AvailabilityZone": "%AVAILABILITY_ZONE%",
 }
 
 var ClusterComputeParameters = map[string]string {
@@ -191,6 +192,7 @@ var ClusterNetworkParameters = map[string]string {
   "NetworkingPool": "%NETWORK_POOL%",
   "NetworkingIndex": "%NETWORK_INDEX%",
   "PubRouteTable": "%PUB_ROUTE_TABLE%",
+  "AvailabilityZone": "%AVAILABILITY_ZONE%",
 }
 
 var ClusterMasterParameters = map[string]string {
@@ -299,6 +301,7 @@ var SoloParameters = map[string]string {
   "AccessKeyName": "%ACCESS_KEY_NAME%",
   "AccessUsername": "%ADMIN_USER_NAME%",
   "AccessNetwork": "%ACCESS_NETWORK%",
+  "AvailabilityZone": "%AVAILABILITY_ZONE%",
 
   "SchedulerType": "%SCHEDULER_TYPE%",
   "PreloadSoftware": "%PRELOAD_SOFTWARE%",

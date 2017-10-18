@@ -106,6 +106,7 @@ var ConfigDefaults = map[string]string {
   "peer-vpc-cidr-block": "",
   "vpn-customer-gateway": "",
   "domain-network-prefix": "10.75",
+  "availability-zone": "",
 
   "allow-internet-access": "1",
 
