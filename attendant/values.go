@@ -161,7 +161,6 @@ var ClusterComputeParameters = map[string]string {
   "ComputeInstanceType": "%COMPUTE_INSTANCE_TYPE%",
   "ComputeInstanceTypeOther": "%COMPUTE_INSTANCE_OVERRIDE%",
   "ComputeSpotPrice": "%COMPUTE_SPOT_PRICE%",
-  "AutoscalingPolicy": "%COMPUTE_AUTOSCALING_POLICY%",
   "ComputeInitialNodes": "%COMPUTE_INITIAL_NODES%",
   "ComputeMaxNodes": "%COMPUTE_MAX_NODES%",
   "AutoscalingGroupLabel": "%COMPUTE_GROUP_LABEL%",
