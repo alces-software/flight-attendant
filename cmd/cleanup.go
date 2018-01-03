@@ -63,7 +63,9 @@ var cleanupCmd = &cobra.Command{
         // list all topics, subscriptions, queues and remove any that aren't accounted for
         for _, cluster := range status.Clusters {
           stacks = append(stacks, "flight-" + domain.Name + "-cluster-" + cluster.Name)
-          networkIndices = append(networkIndices, cluster.Network.Index)
+          if ( cluster.Network != nil ) {
+            networkIndices = append(networkIndices, cluster.Network.Index)
+          }
         }
         for _, appliance := range status.Appliances {
           stacks = append(stacks, "flight-" + domain.Name + "-" + appliance.Name)

@@ -47,7 +47,7 @@ var ConfigDefaults = map[string]string {
   
   "admin-user-name": "alces",
   "access-network": "0.0.0.0/0",
-  "scheduler-type": "gridscheduler",
+  "scheduler-type": "slurm",
   "profile-bucket": "",
   "feature-profile-set": "",
   "personality-data": "",
@@ -106,6 +106,7 @@ var ConfigDefaults = map[string]string {
   "peer-vpc-cidr-block": "",
   "vpn-customer-gateway": "",
   "domain-network-prefix": "10.75",
+  "availability-zone": "",
 
   "allow-internet-access": "1",
 
