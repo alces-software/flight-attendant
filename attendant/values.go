@@ -121,7 +121,7 @@ var InstanceTypes []string = []string{
   "x1e.8xlarge-32C-976GB",
   "x1e.4xlarge-16C-488GB",
   "x1e.2xlarge-8C-244GB",
-  "x1e.xlarge-4C-122GB"
+  "x1e.xlarge-4C-122GB",
 }
 
 var SystemVolumeTypes = []string {
