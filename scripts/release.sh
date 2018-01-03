@@ -10,7 +10,7 @@ if [ -z "$AWS_SECRET_ACCESS_KEY" ]; then
 fi
 
 if [ "$1" == "--dry-run" ]; then
-    dry_run="--dry-run"
+    dry_run="--dryrun"
     shift
 fi
 
@@ -27,14 +27,14 @@ if [ -z "$version" ]; then
     exit 1
 fi
 
-s3cmd put ${dry_run} -P pkg/darwin-amd64/fly s3://alces-flight/FlightAttendant/$version/darwin-x86_64/fly
-s3cmd put ${dry_run} -P pkg/linux-386/fly s3://alces-flight/FlightAttendant/$version/linux-i386/fly
-s3cmd put ${dry_run} -P pkg/linux-amd64/fly s3://alces-flight/FlightAttendant/$version/linux-x86_64/fly
+aws s3 cp ${dry_run} --acl public-read pkg/darwin-amd64/fly s3://alces-flight/FlightAttendant/$version/darwin-x86_64/fly
+aws s3 cp ${dry_run} --acl public-read pkg/linux-386/fly s3://alces-flight/FlightAttendant/$version/linux-i386/fly
+aws s3 cp ${dry_run} --acl public-read pkg/linux-amd64/fly s3://alces-flight/FlightAttendant/$version/linux-x86_64/fly
 if [[ "$version" != *"-dev" ]]; then
     sed -e "s/%SHA256SUM%/$sha256sum/g" -e "s/%VERSION%/$version/g" scripts/fly.rb.tpl > /tmp/fly.rb
-    s3cmd put ${dry_run} -P /tmp/fly.rb s3://alces-flight/FlightAttendant/fly.rb
+    aws s3 cp ${dry_run} --acl public-read /tmp/fly.rb s3://alces-flight/FlightAttendant/fly.rb
 else
     sed -e "s/%SHA256SUM%/$sha256sum/g" -e "s/%VERSION%/$version/g" scripts/fly-dev.rb.tpl > /tmp/fly.rb
-    s3cmd put ${dry_run} -P /tmp/fly.rb s3://alces-flight/FlightAttendant/fly-dev.rb
+    aws s3 cp ${dry_run} --acl public-read /tmp/fly.rb s3://alces-flight/FlightAttendant/fly-dev.rb
 fi
 #rm -f /tmp/fly.rb
