@@ -47,6 +47,8 @@ ldflags="$ldflags -X $pkg.Version=$version"
 release=${2:-dev}
 ldflags="$ldflags -X $pkg.FlightRelease=$release"
 
+ldflags="$ldflags -s -w"
+
 echo "Building for v${version}, release ${release}..."
 targets="${3:-linux-386 linux-amd64 darwin-amd64}"
 for DEST in ${targets}; do
