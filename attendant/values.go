@@ -28,8 +28,8 @@
 
 package attendant
 
-var Version = "0.7.0"
-var FlightRelease = "2017.2r1"
+var Version = "0.8.0-dev"
+var FlightRelease = "2018.1-dev"
 var ReleaseDate = "Unknown"
 
 var InstanceTypes []string = []string{
